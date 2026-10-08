@@ -28,4 +28,65 @@ describe('calculateLoanSummary', () => {
     expect(result.monthlyPayment).toBeGreaterThan(1200)
     expect(result.schedule.length).toBe(360)
   })
+
+  it('starts a recurring extra payment only from the selected date', () => {
+    const result = calculateLoanSummary({
+      loanAmount: 300000,
+      annualRate: 5,
+      termMonths: 180,
+      repaymentType: 'annuity',
+      loanStartDate: '2026-01-01',
+      extraMonthlyPayment: 500,
+      extraMonthlyPaymentStartDate: '2027-10-01',
+      extraPaymentMode: 'reduceTerm',
+    })
+
+    const baselinePayment = result.schedule[0].payment
+    const firstExtraMonth = result.schedule[21]
+    const laterMonth = result.schedule[34]
+
+    expect(result.schedule[0].payment).toBeCloseTo(baselinePayment, 5)
+    expect(firstExtraMonth.payment).toBeCloseTo(baselinePayment, 5)
+    expect(firstExtraMonth.extraPayment).toBeGreaterThan(0)
+    expect(laterMonth.payment).toBeLessThan(baselinePayment)
+    expect(laterMonth.extraPayment).toBeGreaterThan(0)
+  })
+
+  it('supports multiple one-off extra payments on different dates', () => {
+    const result = calculateLoanSummary({
+      loanAmount: 300000,
+      annualRate: 5,
+      termMonths: 180,
+      repaymentType: 'annuity',
+      loanStartDate: '2026-01-01',
+      extraPayments: [
+        { amount: 1000, date: '2027-02-15' },
+        { amount: 2000, date: '2028-03-10' },
+      ],
+      extraPaymentMode: 'reduceTerm',
+    })
+
+    expect(result.schedule[13].payment).toBeCloseTo(result.schedule[0].payment, 2)
+    expect(result.schedule[13].extraPayment).toBeGreaterThan(0)
+    expect(result.schedule[26].payment).toBeLessThan(result.schedule[0].payment)
+    expect(result.schedule[26].extraPayment).toBeGreaterThan(0)
+    expect(result.remainingBalance).toBeLessThan(300000)
+  })
+
+  it('keeps the installment unchanged and adds the extra payment above the rate', () => {
+    const result = calculateLoanSummary({
+      loanAmount: 300000,
+      annualRate: 5,
+      termMonths: 180,
+      repaymentType: 'annuity',
+      loanStartDate: '2026-01-01',
+      extraMonthlyPayment: 500,
+      extraMonthlyPaymentStartDate: '2027-10-01',
+      extraPaymentMode: 'reduceInstallment',
+    })
+
+    expect(result.schedule[0].payment).toBeCloseTo(2372.38, 2)
+    expect(result.schedule[21].payment).toBeCloseTo(result.schedule[0].payment, 2)
+    expect(result.schedule[21].extraPayment).toBeGreaterThan(0)
+  })
 })
