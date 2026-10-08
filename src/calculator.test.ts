@@ -89,4 +89,17 @@ describe('calculateLoanSummary', () => {
     expect(result.schedule[21].payment).toBeCloseTo(result.schedule[0].payment, 2)
     expect(result.schedule[21].extraPayment).toBeGreaterThan(0)
   })
-})
+  it('applies a rate change from the selected date onward', () => {
+    const result = calculateLoanSummary({
+      loanAmount: 300000,
+      annualRate: 5,
+      termMonths: 180,
+      repaymentType: 'annuity',
+      loanStartDate: '2026-01-01',
+      rateChanges: [{ date: '2028-02-01', rate: 6.5 }],
+    })
+
+    expect(result.schedule[0].interest).toBeCloseTo(1250, 2)
+    expect(result.schedule[24].interest).toBeLessThan(result.schedule[25].interest)
+    expect(result.schedule[25].payment).toBeGreaterThan(result.schedule[0].payment)
+  })})

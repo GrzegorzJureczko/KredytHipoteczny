@@ -9,11 +9,18 @@ type ExtraPaymentEntry = {
   effect: ExtraPaymentMode
 }
 
+type RateChangeEntry = {
+  id: number
+  date: string
+  rate: number
+}
+
 type FormState = {
   amount: number
   rate: number
   years: number
   repaymentType: RepaymentType
+  rateChanges: RateChangeEntry[]
   extraMonthlyPayment: number
   extraMonthlyPaymentStartDate: string
   extraPaymentMode: ExtraPaymentMode
@@ -44,6 +51,7 @@ const initialForm: FormState = {
   rate: 5.2,
   years: 30,
   repaymentType: 'annuity',
+  rateChanges: [],
   extraMonthlyPayment: 500,
   extraMonthlyPaymentStartDate: getNextMonthDate(),
   extraPaymentMode: 'reduceTerm',
@@ -98,6 +106,7 @@ function App() {
         termMonths: form.years * 12,
         repaymentType: form.repaymentType,
         loanStartDate,
+        rateChanges: form.rateChanges.map(({ date, rate }) => ({ date, rate })),
         extraMonthlyPayment: form.extraMonthlyPayment,
         extraMonthlyPaymentStartDate: form.extraMonthlyPaymentStartDate,
         extraPayments: form.extraPayments.map(({ amount, date, effect }) => ({
@@ -114,6 +123,36 @@ function App() {
   const monthlyBurden = summary.monthlyPayment + additionalCosts / Math.max(form.years * 12, 1)
 
   const resetForm = () => setForm(initialForm)
+
+  const addRateChange = () => {
+    setForm((current) => ({
+      ...current,
+      rateChanges: [
+        ...current.rateChanges,
+        {
+          id: Date.now() + Math.random(),
+          date: getDateOffsetMonths(12),
+          rate: current.rate,
+        },
+      ],
+    }))
+  }
+
+  const updateRateChange = (id: number, field: 'date' | 'rate', value: string | number) => {
+    setForm((current) => ({
+      ...current,
+      rateChanges: current.rateChanges.map((entry) =>
+        entry.id === id ? { ...entry, [field]: value } : entry,
+      ),
+    }))
+  }
+
+  const removeRateChange = (id: number) => {
+    setForm((current) => ({
+      ...current,
+      rateChanges: current.rateChanges.filter((entry) => entry.id !== id),
+    }))
+  }
 
   const addExtraPayment = () => {
     setForm((current) => ({
@@ -248,6 +287,54 @@ function App() {
                 <option value="decreasing">Malejące</option>
               </select>
             </label>
+          </div>
+
+          <div className="subsection">
+            <h3>Zmiany oprocentowania</h3>
+            <div className="extra-payment-list">
+              <div className="extra-payment-header">
+                <h4>Daty zmiany stopy</h4>
+                <button type="button" className="secondary-button" onClick={addRateChange}>
+                  + Dodaj zmianę
+                </button>
+              </div>
+
+              {form.rateChanges.length === 0 ? (
+                <p className="empty-state">Brak zmian oprocentowania. Dodaj datę i nową stopę, aby zmienić odsetki od wybranego momentu.</p>
+              ) : (
+                form.rateChanges.map((entry) => (
+                  <div key={entry.id} className="extra-payment-row">
+                    <label>
+                      <span>Data zmiany</span>
+                      <input
+                        type="date"
+                        value={entry.date}
+                        onChange={(event) => updateRateChange(entry.id, 'date', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <span>Nowe oprocentowanie</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={entry.rate}
+                        onChange={(event) =>
+                          updateRateChange(entry.id, 'rate', Number(event.target.value))
+                        }
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="remove-button"
+                      onClick={() => removeRateChange(entry.id)}
+                    >
+                      Usuń
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
 
           <div className="subsection">

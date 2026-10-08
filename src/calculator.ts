@@ -7,12 +7,18 @@ export interface ExtraPaymentEntry {
   effect?: ExtraPaymentMode
 }
 
+export interface RateChangeEntry {
+  date: string
+  rate: number
+}
+
 export interface LoanInput {
   loanAmount: number
   annualRate: number
   termMonths: number
   repaymentType: RepaymentType
   loanStartDate?: string
+  rateChanges?: RateChangeEntry[]
   extraMonthlyPayment?: number
   extraMonthlyPaymentStartDate?: string
   extraPayments?: ExtraPaymentEntry[]
@@ -78,6 +84,28 @@ const parseDate = (value?: string) => {
 
 const toMonthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 
+const getEffectiveAnnualRate = (monthDate: Date, baseRate: number, rateChanges: RateChangeEntry[]) => {
+  let effectiveRate = baseRate
+
+  for (const change of [...rateChanges].sort((a, b) => {
+    const left = parseDate(a.date)
+    const right = parseDate(b.date)
+    if (!left || !right) return 0
+    return left.getTime() - right.getTime()
+  })) {
+    const changeDate = parseDate(change.date)
+    if (!changeDate) {
+      continue
+    }
+
+    if (changeDate <= monthDate) {
+      effectiveRate = Number(change.rate) || baseRate
+    }
+  }
+
+  return Math.max(0, effectiveRate)
+}
+
 export function calculateLoanSummary(input: LoanInput): LoanSummary {
   const loanAmount = Math.max(0, Number(input.loanAmount) || 0)
   const annualRate = Math.max(0, Number(input.annualRate) || 0)
@@ -88,6 +116,7 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
   const loanStartDate = parseDate(input.loanStartDate) ?? new Date()
   const monthlyRecurringStartDate = parseDate(input.extraMonthlyPaymentStartDate)
   const extraPayments = Array.isArray(input.extraPayments) ? input.extraPayments : []
+  const rateChanges = Array.isArray(input.rateChanges) ? input.rateChanges : []
 
   const monthlyRate = annualRate / 100 / 12
   let monthlyPayment = loanAmount / termMonths
@@ -112,6 +141,8 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
     currentDate.setDate(1)
     currentDate.setMonth(currentDate.getMonth() + (month - 1))
 
+    const currentAnnualRate = getEffectiveAnnualRate(currentDate, annualRate, rateChanges)
+    const currentMonthlyRate = currentAnnualRate / 100 / 12
     const currentMonthKey = toMonthKey(currentDate)
 
     const recurringExtraPayment =
@@ -141,11 +172,11 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
       }, 0)
 
     const monthsRemaining = termMonths - month + 1
-    const interest = remainingBalance * monthlyRate
+    const interest = remainingBalance * currentMonthlyRate
     const scheduledPayment = calculatePaymentForBalance(
       remainingBalance,
       monthsRemaining,
-      annualRate,
+      currentAnnualRate,
       input.repaymentType,
     )
 
