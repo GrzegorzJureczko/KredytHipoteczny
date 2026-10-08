@@ -33,6 +33,21 @@ const initialForm: FormState = {
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' }).format(value)
 
+const monthNames = [
+  'styczeń',
+  'luty',
+  'marzec',
+  'kwiecień',
+  'maj',
+  'czerwiec',
+  'lipiec',
+  'sierpień',
+  'wrzesień',
+  'październik',
+  'listopad',
+  'grudzień',
+]
+
 function App() {
   const [form, setForm] = useState<FormState>(initialForm)
 
@@ -58,7 +73,32 @@ function App() {
 
   const totalCost = summary.totalPaid + additionalCosts
   const monthlyBurden = summary.monthlyPayment + additionalCosts / Math.max(form.years * 12, 1)
-  const tableRows = summary.schedule.slice(0, 12)
+
+  const scheduleWithDates = summary.schedule.map((row, index) => {
+    const baseDate = new Date()
+    const paymentDate = new Date(
+      baseDate.getFullYear(),
+      baseDate.getMonth() + 1 + index,
+      1,
+    )
+
+    return {
+      ...row,
+      paymentDate,
+      monthLabel: `${monthNames[paymentDate.getMonth()]} ${paymentDate.getFullYear()}`,
+      year: paymentDate.getFullYear(),
+    }
+  })
+
+  const groupedByYear = Object.values(
+    scheduleWithDates.reduce<Record<number, typeof scheduleWithDates>>((acc, item) => {
+      if (!acc[item.year]) {
+        acc[item.year] = []
+      }
+      acc[item.year].push(item)
+      return acc
+    }, {}),
+  )
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
@@ -263,32 +303,39 @@ function App() {
       <section className="panel schedule-panel">
         <div className="section-header">
           <h2>Harmonogram spłat</h2>
-          <span>pierwsze 12 miesięcy</span>
+          <span>po latach</span>
         </div>
 
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Miesiąc</th>
-                <th>Rata</th>
-                <th>Kapitał</th>
-                <th>Odsetki</th>
-                <th>Saldo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableRows.map((row) => (
-                <tr key={row.month}>
-                  <td>{row.month}</td>
-                  <td>{formatCurrency(row.payment)}</td>
-                  <td>{formatCurrency(row.principal)}</td>
-                  <td>{formatCurrency(row.interest)}</td>
-                  <td>{formatCurrency(row.remainingBalance)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="year-groups">
+          {groupedByYear.map((rows, index) => (
+            <details key={rows[0]?.year ?? index} open={index === 0} className="year-group">
+              <summary>{rows[0]?.year}</summary>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Miesiąc</th>
+                      <th>Rata</th>
+                      <th>Kapitał</th>
+                      <th>Odsetki</th>
+                      <th>Saldo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => (
+                      <tr key={`${row.year}-${row.month}`}>
+                        <td>{row.monthLabel}</td>
+                        <td>{formatCurrency(row.payment)}</td>
+                        <td>{formatCurrency(row.principal)}</td>
+                        <td>{formatCurrency(row.interest)}</td>
+                        <td>{formatCurrency(row.remainingBalance)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          ))}
         </div>
       </section>
     </div>

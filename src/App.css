@@ -162,8 +162,35 @@ select:focus {
   font-size: 0.85rem;
 }
 
+.year-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.year-group {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.4);
+  overflow: hidden;
+}
+
+.year-group summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  font-weight: 700;
+  color: #f8fafc;
+  background: rgba(30, 41, 59, 0.85);
+}
+
+.year-group summary::-webkit-details-marker {
+  display: none;
+}
+
 .table-wrap {
   overflow-x: auto;
+  padding: 0 12px 12px;
 }
 
 table {
