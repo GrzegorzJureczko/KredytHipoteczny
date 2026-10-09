@@ -110,8 +110,27 @@ function App() {
     type: 'success',
     text: '',
   })
+  const [isAuthMessageVisible, setIsAuthMessageVisible] = useState(false)
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!authMessage.text) {
+      setIsAuthMessageVisible(false)
+      return
+    }
+
+    setIsAuthMessageVisible(true)
+
+    const timeoutId = window.setTimeout(() => {
+      setIsAuthMessageVisible(false)
+      window.setTimeout(() => {
+        setAuthMessage((current) => ({ ...current, text: '' }))
+      }, 350)
+    }, 2500)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [authMessage.text])
 
   const loadSavedCalculations = async (userId: string) => {
     if (!supabase || !isSupabaseConfigured) {
@@ -572,8 +591,20 @@ function App() {
           </>
         )}
 
-        {authMessage.text ? (
-          <p className={authMessage.type === 'success' ? 'auth-message success' : 'auth-message error'}>
+        {authMessage.text || isAuthMessageVisible ? (
+          <p
+            className={
+              authMessage.type === 'success' ? 'auth-message success' : 'auth-message error'
+            }
+            style={{
+              opacity: isAuthMessageVisible ? 1 : 0,
+              transform: isAuthMessageVisible ? 'translateY(0)' : 'translateY(-6px)',
+              maxHeight: isAuthMessageVisible ? '80px' : '0px',
+              marginTop: isAuthMessageVisible ? '14px' : '0px',
+              paddingTop: isAuthMessageVisible ? '10px' : '0px',
+              paddingBottom: isAuthMessageVisible ? '10px' : '0px',
+            }}
+          >
             {authMessage.text}
           </p>
         ) : null}
