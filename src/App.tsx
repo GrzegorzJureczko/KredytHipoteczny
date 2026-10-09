@@ -118,6 +118,12 @@ function App() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   useEffect(() => {
+    if (currentUserEmail) {
+      setSavedCalculationsExpanded(false)
+    }
+  }, [currentUserEmail])
+
+  useEffect(() => {
     if (!authMessage.text) {
       setIsAuthMessageVisible(false)
       return
@@ -313,6 +319,16 @@ function App() {
   }
 
   const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(lastSavedForm)
+  const isSaveDisabled = selectedSavedCalculationId ? !hasUnsavedChanges : false
+
+  const handleSaveCurrentCalculationClick = () => {
+    if (!selectedSavedCalculationId && !savedCalculationsExpanded) {
+      setSavedCalculationsExpanded(true)
+      return
+    }
+
+    handleSaveCurrentCalculation()
+  }
 
   const handleSaveCurrentCalculation = async () => {
     if (!supabase || !isSupabaseConfigured || !currentUserId) {
@@ -334,7 +350,7 @@ function App() {
       }
 
       setLastSavedForm(form)
-      setAuthMessage({ type: 'success', text: 'Zmiany w zapisie zostały zapisane.' })
+      setAuthMessage({ type: 'success', text: 'Zapisano zmiany.' })
       await loadSavedCalculations(currentUserId)
       return
     }
@@ -550,12 +566,17 @@ function App() {
                 <button
                   type="button"
                   className="save-disk-button"
-                  onClick={handleSaveCurrentCalculation}
-                  disabled={!hasUnsavedChanges}
+                  onClick={handleSaveCurrentCalculationClick}
+                  disabled={isSaveDisabled}
                   title={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
                   aria-label={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
                 >
                   <span aria-hidden="true">💾</span>
+                  {selectedSavedCalculationId ? (
+                    <span className="save-disk-label">
+                      {savedCalculationName || 'Zapisz zmiany'}
+                    </span>
+                  ) : null}
                 </button>
               </div>
 
