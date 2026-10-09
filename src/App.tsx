@@ -1,6 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import './App.css'
 import { calculateLoanSummary, type ExtraPaymentMode, type RepaymentType } from './calculator'
+import { getAuthErrorMessage } from './authError'
+import { isSupabaseConfigured, supabase } from './lib/supabase'
+import {
+  normalizeSavedCalculationPayload,
+  type SavedCalculationPayload,
+} from './savedCalculations'
+
+const normalizeEmail = (value: string) => value.trim().toLowerCase()
+
+const isEmailValid = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 
 type ExtraPaymentEntry = {
   id: number
@@ -81,8 +91,256 @@ const monthNames = [
   'grudzień',
 ]
 
+type SavedCalculationEntry = {
+  id: string
+  name: string
+  payload: SavedCalculationPayload
+  created_at?: string
+}
+
 function App() {
   const [form, setForm] = useState<FormState>(initialForm)
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'reset'>('login')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('')
+  const [savedCalculationName, setSavedCalculationName] = useState('')
+  const [savedCalculations, setSavedCalculations] = useState<SavedCalculationEntry[]>([])
+  const [authMessage, setAuthMessage] = useState<{ type: 'success' | 'error'; text: string }>({
+    type: 'success',
+    text: '',
+  })
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+
+  const loadSavedCalculations = async (userId: string) => {
+    if (!supabase || !isSupabaseConfigured) {
+      setSavedCalculations([])
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('saved_calculations')
+      .select('id, name, payload, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+      return
+    }
+
+    const normalized = (data ?? [])
+      .map((entry) => {
+        const payload = normalizeSavedCalculationPayload(entry.payload as unknown)
+
+        if (!payload) {
+          return null
+        }
+
+        return {
+          id: entry.id,
+          name: entry.name ?? 'Zapisana kalkulacja',
+          payload,
+          created_at: entry.created_at ?? undefined,
+        }
+      })
+      .filter(Boolean) as SavedCalculationEntry[]
+
+    setSavedCalculations(normalized)
+  }
+
+  useEffect(() => {
+    if (!supabase) {
+      return
+    }
+
+    const syncSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const user = session?.user
+      setCurrentUserEmail(user?.email ?? null)
+      setCurrentUserId(user?.id ?? null)
+
+      if (user?.id) {
+        await loadSavedCalculations(user.id)
+      } else {
+        setSavedCalculations([])
+      }
+    }
+
+    syncSession()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const user = session?.user
+      setCurrentUserEmail(user?.email ?? null)
+      setCurrentUserId(user?.id ?? null)
+
+      if (user?.id) {
+        await loadSavedCalculations(user.id)
+      } else {
+        setSavedCalculations([])
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!supabase || !isSupabaseConfigured) {
+      setAuthMessage({
+        type: 'error',
+        text: 'Brakuje konfiguracji Supabase. Ustaw VITE_SUPABASE_URL i VITE_SUPABASE_ANON_KEY.',
+      })
+      return
+    }
+
+    const email = normalizeEmail(authEmail)
+
+    if (!isEmailValid(email)) {
+      setAuthMessage({ type: 'error', text: 'Podaj poprawny adres e-mail.' })
+      return
+    }
+
+    if (authMode === 'register') {
+      if (authPassword.length < 6) {
+        setAuthMessage({ type: 'error', text: 'Hasło musi mieć co najmniej 6 znaków.' })
+        return
+      }
+
+      if (authPassword !== authConfirmPassword) {
+        setAuthMessage({ type: 'error', text: 'Hasła nie są zgodne.' })
+        return
+      }
+
+      const { error } = await supabase.auth.signUp({ email, password: authPassword })
+
+      if (error) {
+        setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+        return
+      }
+
+      setCurrentUserEmail(email)
+      setAuthMessage({
+        type: 'success',
+        text: 'Konto zostało utworzone. Sprawdź e-mail, aby potwierdzić konto.',
+      })
+      setAuthEmail('')
+      setAuthPassword('')
+      setAuthConfirmPassword('')
+      return
+    }
+
+    if (authMode === 'login') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password: authPassword })
+
+      if (error) {
+        setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+        return
+      }
+
+      setAuthMessage({ type: 'success', text: 'Zalogowano pomyślnie.' })
+      setAuthEmail('')
+      setAuthPassword('')
+      return
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/`,
+    })
+
+    if (error) {
+      setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+      return
+    }
+
+    setAuthMessage({
+      type: 'success',
+      text: 'Link do resetu hasła został wysłany na podany adres e-mail.',
+    })
+    setAuthEmail('')
+    setAuthPassword('')
+    setAuthConfirmPassword('')
+  }
+
+  const handleLogout = async () => {
+    if (!supabase || !isSupabaseConfigured) {
+      setAuthMessage({ type: 'error', text: 'Brakuje konfiguracji Supabase.' })
+      return
+    }
+
+    const { error } = await supabase.auth.signOut()
+
+    if (error) {
+      setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+      return
+    }
+
+    setCurrentUserEmail(null)
+    setCurrentUserId(null)
+    setSavedCalculations([])
+    setSavedCalculationName('')
+    setAuthMessage({ type: 'success', text: 'Wylogowano.' })
+  }
+
+  const handleSaveCurrentCalculation = async () => {
+    if (!supabase || !isSupabaseConfigured || !currentUserId) {
+      setAuthMessage({ type: 'error', text: 'Zaloguj się, aby zapisać kalkulację.' })
+      return
+    }
+
+    const name = savedCalculationName.trim() || `Kalkulacja ${new Date().toLocaleDateString('pl-PL')}`
+
+    const { error } = await supabase.from('saved_calculations').insert([
+      {
+        user_id: currentUserId,
+        name,
+        payload: form,
+      },
+    ])
+
+    if (error) {
+      setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+      return
+    }
+
+    setSavedCalculationName(name)
+    setAuthMessage({ type: 'success', text: 'Kalkulacja została zapisana.' })
+    await loadSavedCalculations(currentUserId)
+  }
+
+  const handleLoadSavedCalculation = async (entry: SavedCalculationEntry) => {
+    setForm({
+      ...initialForm,
+      ...entry.payload,
+      rateChanges: entry.payload.rateChanges,
+      extraPayments: entry.payload.extraPayments,
+    })
+    setSavedCalculationName(entry.name)
+    setAuthMessage({ type: 'success', text: `Wczytano zapis: ${entry.name}.` })
+  }
+
+  const handleDeleteSavedCalculation = async (entryId: string) => {
+    if (!supabase || !isSupabaseConfigured || !currentUserId) {
+      setAuthMessage({ type: 'error', text: 'Zaloguj się, aby usunąć zapis.' })
+      return
+    }
+
+    const { error } = await supabase.from('saved_calculations').delete().eq('id', entryId)
+
+    if (error) {
+      setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+      return
+    }
+
+    setAuthMessage({ type: 'success', text: 'Zapis został usunięty.' })
+    await loadSavedCalculations(currentUserId)
+  }
 
   const additionalCosts =
     form.applicationFee +
@@ -221,6 +479,153 @@ function App() {
 
   return (
     <div className="page-shell">
+      <section className="panel auth-panel">
+        {currentUserEmail ? (
+          <div className="auth-header">
+            <div>
+              <p className="eyebrow">Konto użytkownika</p>
+              <h2>Zalogowany</h2>
+            </div>
+            <div className="user-badge">
+              <span>{currentUserEmail}</span>
+              <button type="button" className="secondary-button" onClick={handleLogout}>
+                Wyloguj
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="auth-header">
+              <div>
+                <p className="eyebrow">Konto użytkownika</p>
+                <h2>Rejestracja i logowanie</h2>
+              </div>
+            </div>
+
+            <div className="auth-tabs">
+              <button
+                type="button"
+                className={authMode === 'login' ? 'auth-tab active' : 'auth-tab'}
+                onClick={() => setAuthMode('login')}
+              >
+                Zaloguj się
+              </button>
+              <button
+                type="button"
+                className={authMode === 'register' ? 'auth-tab active' : 'auth-tab'}
+                onClick={() => setAuthMode('register')}
+              >
+                Rejestracja
+              </button>
+              <button
+                type="button"
+                className={authMode === 'reset' ? 'auth-tab active' : 'auth-tab'}
+                onClick={() => setAuthMode('reset')}
+              >
+                Reset hasła
+              </button>
+            </div>
+
+            <form className="auth-form" onSubmit={handleAuthSubmit}>
+              <label>
+                <span>E-mail</span>
+                <input
+                  type="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  placeholder="twoj@email.pl"
+                />
+              </label>
+
+              {authMode !== 'reset' ? (
+                <label>
+                  <span>Hasło</span>
+                  <input
+                    type="password"
+                    value={authPassword}
+                    onChange={(event) => setAuthPassword(event.target.value)}
+                    placeholder="Minimum 6 znaków"
+                  />
+                </label>
+              ) : null}
+
+              {authMode === 'register' ? (
+                <label>
+                  <span>Powtórz hasło</span>
+                  <input
+                    type="password"
+                    value={authConfirmPassword}
+                    onChange={(event) => setAuthConfirmPassword(event.target.value)}
+                    placeholder="Potwierdź hasło"
+                  />
+                </label>
+              ) : null}
+
+              <button type="submit" className="primary-button">
+                {authMode === 'login'
+                  ? 'Zaloguj się'
+                  : authMode === 'register'
+                    ? 'Utwórz konto'
+                    : 'Wyślij link do resetu'}
+              </button>
+            </form>
+          </>
+        )}
+
+        {authMessage.text ? (
+          <p className={authMessage.type === 'success' ? 'auth-message success' : 'auth-message error'}>
+            {authMessage.text}
+          </p>
+        ) : null}
+
+        {currentUserEmail ? (
+          <div className="saved-calculations">
+            <div className="saved-header">
+              <h3>Zapisane kalkulacje</h3>
+            </div>
+
+            <div className="saved-toolbar">
+              <input
+                type="text"
+                value={savedCalculationName}
+                onChange={(event) => setSavedCalculationName(event.target.value)}
+                placeholder="Nazwa kalkulacji"
+              />
+              <button type="button" className="primary-button" onClick={handleSaveCurrentCalculation}>
+                Zapisz
+              </button>
+            </div>
+
+            {savedCalculations.length === 0 ? (
+              <p className="empty-state">Brak zapisanych kalkulacji. Zapisz bieżący scenariusz, aby wrócić do niego później.</p>
+            ) : (
+              <ul className="saved-list">
+                {savedCalculations.map((entry) => (
+                  <li key={entry.id} className="saved-item">
+                    <div className="saved-summary">
+                      <strong>{entry.name}</strong>
+                      <span>
+                        {entry.created_at
+                          ? new Date(entry.created_at).toLocaleDateString('pl-PL')
+                          : 'Dziś'}
+                      </span>
+                    </div>
+                    <div className="saved-actions">
+                      <button type="button" className="secondary-button" onClick={() => handleLoadSavedCalculation(entry)}>
+                        Wczytaj
+                      </button>
+                      <button type="button" className="remove-button" onClick={() => handleDeleteSavedCalculation(entry.id)}>
+                        Usuń
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+      </section>
+
       <header className="topbar">
         <div>
           <p className="eyebrow">Kalkulator kredytowy</p>
