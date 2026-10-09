@@ -321,6 +321,13 @@ function App() {
   const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(lastSavedForm)
   const isSaveDisabled = selectedSavedCalculationId ? !hasUnsavedChanges : false
 
+  const startNewSavedCalculationDraft = () => {
+    setSelectedSavedCalculationId(null)
+    setSavedCalculationName('')
+    setLastSavedForm(form)
+    setSavedCalculationsExpanded(true)
+  }
+
   const handleSaveCurrentCalculationClick = () => {
     if (!selectedSavedCalculationId && !savedCalculationsExpanded) {
       setSavedCalculationsExpanded(true)
@@ -694,15 +701,19 @@ function App() {
                 onChange={(event) => setSavedCalculationName(event.target.value)}
                 placeholder="Nazwa kalkulacji"
               />
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleSaveCurrentCalculation}
+                disabled={selectedSavedCalculationId ? isSaveDisabled : false}
+              >
+                {selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz nową kalkulację'}
+              </button>
               {selectedSavedCalculationId ? (
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={() => {
-                    setSelectedSavedCalculationId(null)
-                    setSavedCalculationName('')
-                    setLastSavedForm(form)
-                  }}
+                  onClick={startNewSavedCalculationDraft}
                 >
                   Nowy zapis
                 </button>
