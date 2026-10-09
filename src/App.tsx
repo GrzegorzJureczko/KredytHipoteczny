@@ -106,6 +106,9 @@ function App() {
   const [authConfirmPassword, setAuthConfirmPassword] = useState('')
   const [savedCalculationName, setSavedCalculationName] = useState('')
   const [savedCalculations, setSavedCalculations] = useState<SavedCalculationEntry[]>([])
+  const [selectedSavedCalculationId, setSelectedSavedCalculationId] = useState<string | null>(null)
+  const [savedCalculationsExpanded, setSavedCalculationsExpanded] = useState(false)
+  const [lastSavedForm, setLastSavedForm] = useState<FormState>(initialForm)
   const [authMessage, setAuthMessage] = useState<{ type: 'success' | 'error'; text: string }>({
     type: 'success',
     text: '',
@@ -304,8 +307,12 @@ function App() {
     setCurrentUserId(null)
     setSavedCalculations([])
     setSavedCalculationName('')
+    setSelectedSavedCalculationId(null)
+    setLastSavedForm(initialForm)
     setAuthMessage({ type: 'success', text: 'Wylogowano.' })
   }
+
+  const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(lastSavedForm)
 
   const handleSaveCurrentCalculation = async () => {
     if (!supabase || !isSupabaseConfigured || !currentUserId) {
@@ -315,32 +322,59 @@ function App() {
 
     const name = savedCalculationName.trim() || `Kalkulacja ${new Date().toLocaleDateString('pl-PL')}`
 
-    const { error } = await supabase.from('saved_calculations').insert([
-      {
-        user_id: currentUserId,
-        name,
-        payload: form,
-      },
-    ])
+    if (selectedSavedCalculationId) {
+      const { error } = await supabase
+        .from('saved_calculations')
+        .update({ name, payload: form })
+        .eq('id', selectedSavedCalculationId)
+
+      if (error) {
+        setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+        return
+      }
+
+      setLastSavedForm(form)
+      setAuthMessage({ type: 'success', text: 'Zmiany w zapisie zostały zapisane.' })
+      await loadSavedCalculations(currentUserId)
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('saved_calculations')
+      .insert([
+        {
+          user_id: currentUserId,
+          name,
+          payload: form,
+        },
+      ])
+      .select('id')
+      .single()
 
     if (error) {
       setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
       return
     }
 
-    setSavedCalculationName(name)
+    setSavedCalculationName('')
+    setSelectedSavedCalculationId(data?.id ?? null)
+    setLastSavedForm(form)
     setAuthMessage({ type: 'success', text: 'Kalkulacja została zapisana.' })
     await loadSavedCalculations(currentUserId)
   }
 
   const handleLoadSavedCalculation = async (entry: SavedCalculationEntry) => {
+    const loadedSnapshot = JSON.parse(JSON.stringify(entry.payload)) as FormState
+
     setForm({
       ...initialForm,
-      ...entry.payload,
-      rateChanges: entry.payload.rateChanges,
-      extraPayments: entry.payload.extraPayments,
+      ...loadedSnapshot,
+      rateChanges: loadedSnapshot.rateChanges,
+      extraPayments: loadedSnapshot.extraPayments,
     })
+    setLastSavedForm(loadedSnapshot)
     setSavedCalculationName(entry.name)
+    setSelectedSavedCalculationId(entry.id)
     setAuthMessage({ type: 'success', text: `Wczytano zapis: ${entry.name}.` })
   }
 
@@ -500,16 +534,37 @@ function App() {
     <div className="page-shell">
       <section className="panel auth-panel">
         {currentUserEmail ? (
-          <div className="auth-header">
-            <div>
-              <p className="eyebrow">Konto użytkownika</p>
-              <h2>Zalogowany</h2>
-            </div>
-            <div className="user-badge">
-              <span>{currentUserEmail}</span>
-              <button type="button" className="secondary-button" onClick={handleLogout}>
-                Wyloguj
-              </button>
+          <div className="auth-header logged-in-header">
+            <div className="user-panel-row">
+              <div className="left-user-actions">
+                <button
+                  type="button"
+                  className="saved-toggle-button"
+                  onClick={() => setSavedCalculationsExpanded((value) => !value)}
+                  aria-expanded={savedCalculationsExpanded}
+                >
+                  <span className="collapse-indicator">{savedCalculationsExpanded ? '▾' : '▸'}</span>
+                  <span>Zapisane kalkulacje</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="save-disk-button"
+                  onClick={handleSaveCurrentCalculation}
+                  disabled={!hasUnsavedChanges}
+                  title={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
+                  aria-label={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
+                >
+                  <span aria-hidden="true">💾</span>
+                </button>
+              </div>
+
+              <div className="user-badge">
+                <span>{currentUserEmail}</span>
+                <button type="button" className="secondary-button" onClick={handleLogout}>
+                  Wyloguj
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -609,12 +664,8 @@ function App() {
           </p>
         ) : null}
 
-        {currentUserEmail ? (
+        {currentUserEmail && savedCalculationsExpanded ? (
           <div className="saved-calculations">
-            <div className="saved-header">
-              <h3>Zapisane kalkulacje</h3>
-            </div>
-
             <div className="saved-toolbar">
               <input
                 type="text"
@@ -622,9 +673,19 @@ function App() {
                 onChange={(event) => setSavedCalculationName(event.target.value)}
                 placeholder="Nazwa kalkulacji"
               />
-              <button type="button" className="primary-button" onClick={handleSaveCurrentCalculation}>
-                Zapisz
-              </button>
+              {selectedSavedCalculationId ? (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setSelectedSavedCalculationId(null)
+                    setSavedCalculationName('')
+                    setLastSavedForm(form)
+                  }}
+                >
+                  Nowy zapis
+                </button>
+              ) : null}
             </div>
 
             {savedCalculations.length === 0 ? (

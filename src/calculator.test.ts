@@ -73,6 +73,28 @@ describe('calculateLoanSummary', () => {
     expect(result.remainingBalance).toBeLessThan(300000)
   })
 
+  it('uses the latest valid rate change when several changes occur over time', () => {
+    const result = calculateLoanSummary({
+      loanAmount: 300000,
+      annualRate: 5,
+      termMonths: 180,
+      repaymentType: 'annuity',
+      loanStartDate: '2026-01-01',
+      rateChanges: [
+        { date: '2027-02-01', rate: 5.5 },
+        { date: '2028-03-01', rate: 6.5 },
+      ],
+    })
+
+    const firstHigherInterestMonth = result.schedule.findIndex(
+      (row) => row.interest > result.schedule[0].interest,
+    )
+
+    expect(firstHigherInterestMonth).toBeGreaterThan(0)
+    expect(firstHigherInterestMonth).toBeLessThan(result.schedule.length)
+    expect(result.totalInterest).toBeGreaterThan(90000)
+  })
+
   it('keeps the installment unchanged and adds the extra payment above the rate', () => {
     const result = calculateLoanSummary({
       loanAmount: 300000,
@@ -102,4 +124,27 @@ describe('calculateLoanSummary', () => {
     expect(result.schedule[0].interest).toBeCloseTo(1250, 2)
     expect(result.schedule[24].interest).toBeLessThan(result.schedule[25].interest)
     expect(result.schedule[25].payment).toBeGreaterThan(result.schedule[0].payment)
-  })})
+  })
+
+  it('ignores extra payments before their start date for recurring payments', () => {
+    const result = calculateLoanSummary({
+      loanAmount: 300000,
+      annualRate: 5,
+      termMonths: 180,
+      repaymentType: 'annuity',
+      loanStartDate: '2026-01-01',
+      extraMonthlyPayment: 500,
+      extraMonthlyPaymentStartDate: '2028-01-01',
+      extraPaymentMode: 'reduceTerm',
+    })
+
+    const firstExtraPaymentMonth = result.schedule.findIndex((row) => row.extraPayment > 0)
+
+    expect(result.schedule[0].extraPayment).toBe(0)
+    expect(firstExtraPaymentMonth).toBeGreaterThan(0)
+    expect(result.schedule[firstExtraPaymentMonth].extraPayment).toBeGreaterThan(0)
+    expect(
+      result.schedule.slice(0, firstExtraPaymentMonth).every((row) => row.extraPayment === 0),
+    ).toBe(true)
+  })
+})
