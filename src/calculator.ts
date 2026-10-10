@@ -33,6 +33,7 @@ export interface LoanScheduleRow {
   interest: number
   remainingBalance: number
   extraPayment: number
+  additionalCosts?: number
 }
 
 export interface LoanSummary {

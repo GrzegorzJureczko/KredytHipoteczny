@@ -367,6 +367,24 @@ select:focus {
   font-size: 1.1rem;
 }
 
+.insurance-block {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 41, 59, 0.6));
+}
+
+.insurance-block + .insurance-block {
+  margin-top: 16px;
+}
+
+.insurance-block h4 {
+  margin: 0 0 12px;
+  color: #eff6ff;
+  font-size: 0.96rem;
+}
+
 .extra-payment-list {
   margin-top: 18px;
   display: flex;
