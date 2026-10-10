@@ -28,6 +28,7 @@ export interface LoanInput {
 
 export interface LoanScheduleRow {
   month: number
+  annualRate: number
   payment: number
   principal: number
   interest: number
@@ -293,6 +294,7 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
 
     schedule.push({
       month,
+      annualRate: currentAnnualRate,
       payment: safeRound(payment),
       principal: safeRound(regularPrincipal),
       interest: safeRound(interest),

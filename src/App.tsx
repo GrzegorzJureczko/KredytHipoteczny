@@ -89,6 +89,8 @@ const initialForm: FormState = {
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' }).format(value)
+const formatPercent = (value: number) =>
+  `${new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 2 }).format(value)}%`
 
 const monthNames = [
   'styczeń',
@@ -1224,16 +1226,18 @@ function App() {
           <table>
             <colgroup>
               <col style={{ width: '14%' }} />
-              <col style={{ width: '18%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '16%' }} />
               <col style={{ width: '10%' }} />
+              <col style={{ width: '16%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '8%' }} />
             </colgroup>
             <thead>
               <tr>
                 <th>Miesiąc</th>
+                <th>Oprocentowanie</th>
                 <th>Rata</th>
                 <th>Kapitał</th>
                 <th>Odsetki</th>
@@ -1253,17 +1257,19 @@ function App() {
                 <table>
                   <colgroup>
                     <col style={{ width: '14%' }} />
-                    <col style={{ width: '18%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '16%' }} />
                     <col style={{ width: '10%' }} />
+                    <col style={{ width: '16%' }} />
+                    <col style={{ width: '13%' }} />
+                    <col style={{ width: '13%' }} />
+                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '8%' }} />
                   </colgroup>
                   <tbody>
                     {rows.map((row) => (
                       <tr key={`${row.year}-${row.month}`}>
                         <td>{row.monthLabel}</td>
+                        <td>{formatPercent(row.annualRate)}</td>
                         <td>{formatCurrency(row.payment)}</td>
                         <td>{formatCurrency(row.principal)}</td>
                         <td>{formatCurrency(row.interest)}</td>

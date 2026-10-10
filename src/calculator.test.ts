@@ -219,6 +219,9 @@ describe('calculateLoanSummary', () => {
     })
 
     expect(result.schedule[0].interest).toBeCloseTo(1250, 2)
+    expect(result.schedule[0].annualRate).toBe(5)
+    expect(result.schedule[24].annualRate).toBe(5)
+    expect(result.schedule[25].annualRate).toBe(6.5)
     expect(result.schedule[24].interest).toBeLessThan(result.schedule[25].interest)
     expect(result.schedule[25].payment).toBeGreaterThan(result.schedule[0].payment)
   })
