@@ -319,7 +319,7 @@ function App() {
   }
 
   const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(lastSavedForm)
-  const isSaveDisabled = selectedSavedCalculationId ? !hasUnsavedChanges : false
+  const isSaveButtonInactive = selectedSavedCalculationId ? !hasUnsavedChanges : true
 
   const startNewSavedCalculationDraft = () => {
     setSelectedSavedCalculationId(null)
@@ -329,8 +329,10 @@ function App() {
   }
 
   const handleSaveCurrentCalculationClick = () => {
-    if (!selectedSavedCalculationId && !savedCalculationsExpanded) {
-      setSavedCalculationsExpanded(true)
+    if (isSaveButtonInactive) {
+      if (!selectedSavedCalculationId && !savedCalculationsExpanded) {
+        setSavedCalculationsExpanded(true)
+      }
       return
     }
 
@@ -352,6 +354,7 @@ function App() {
           user_id: currentUserId,
           name,
           payload: form,
+          created_at: new Date().toISOString(),
         },
       ])
       .select('id')
@@ -384,7 +387,11 @@ function App() {
 
     const { error } = await supabase
       .from('saved_calculations')
-      .update({ name, payload: form })
+      .update({
+        name,
+        payload: form,
+        created_at: new Date().toISOString(),
+      })
       .eq('id', selectedSavedCalculationId)
 
     if (error) {
@@ -585,7 +592,7 @@ function App() {
                   type="button"
                   className="save-disk-button"
                   onClick={handleSaveCurrentCalculationClick}
-                  disabled={isSaveDisabled}
+                  aria-disabled={String(isSaveButtonInactive)}
                   title={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
                   aria-label={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
                 >
@@ -732,8 +739,14 @@ function App() {
                       <strong>{entry.name}</strong>
                       <span>
                         {entry.created_at
-                          ? new Date(entry.created_at).toLocaleDateString('pl-PL')
-                          : 'Dziś'}
+                          ? `Ostatni zapis: ${new Date(entry.created_at).toLocaleString('pl-PL', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}`
+                          : 'Ostatni zapis: dziś'}
                       </span>
                     </div>
                     <div className="saved-actions">

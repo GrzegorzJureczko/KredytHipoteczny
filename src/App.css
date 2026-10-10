@@ -106,10 +106,14 @@
   text-overflow: ellipsis;
 }
 
-.save-disk-button:disabled {
-  cursor: not-allowed;
+.save-disk-button[aria-disabled='true'] {
+  cursor: default;
   opacity: 0.45;
   filter: grayscale(0.8);
+}
+
+.save-disk-button[aria-disabled='false'] {
+  cursor: pointer;
 }
 
 .saved-toggle-button:hover {
