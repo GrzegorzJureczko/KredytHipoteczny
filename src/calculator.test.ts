@@ -22,8 +22,9 @@ describe('calculateLoanSummary', () => {
         if (repaymentType === 'annuity') {
           expect(row.payment).toBeCloseTo(baseline.schedule[index].payment, 2)
         } else {
-          expect(row.principal - row.extraPayment).toBeCloseTo(baseline.schedule[index].principal, 2)
+          expect(row.principal).toBeCloseTo(baseline.schedule[index].principal, 2)
         }
+        expect(row.payment).toBeCloseTo(row.principal + row.interest, 1)
       })
     },
   )
@@ -47,6 +48,9 @@ describe('calculateLoanSummary', () => {
       expect(result.loanTermMonths).toBeLessThanOrEqual(input.termMonths)
       expect(result.schedule[6].payment).toBeCloseTo(baseline.schedule[6].payment, 2)
       expect(result.schedule[7].payment).toBeLessThan(baseline.schedule[7].payment)
+      result.schedule.forEach((row) => {
+        expect(row.payment).toBeCloseTo(row.principal + row.interest, 1)
+      })
       expect(baseline.schedule[7].payment - result.schedule[7].payment).toBeLessThan(
         input.extraMonthlyPayment,
       )
@@ -161,7 +165,7 @@ describe('calculateLoanSummary', () => {
     const finalRow = result.schedule[0]
 
     expect(finalRow.remainingBalance).toBe(0)
-    expect(finalRow.principal).toBe(10000)
+    expect(finalRow.principal + finalRow.extraPayment).toBeCloseTo(10000, 2)
     expect(finalRow.extraPayment).toBeLessThan(20000)
     expect(result.totalPaid).toBeCloseTo(finalRow.payment + finalRow.extraPayment, 2)
   })

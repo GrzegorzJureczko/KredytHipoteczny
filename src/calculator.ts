@@ -294,7 +294,7 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
     schedule.push({
       month,
       payment: safeRound(payment),
-      principal: safeRound(principal),
+      principal: safeRound(regularPrincipal),
       interest: safeRound(interest),
       remainingBalance: safeRound(remainingBalance),
       extraPayment: safeRound(appliedExtraPayment),
