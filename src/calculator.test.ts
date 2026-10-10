@@ -29,7 +29,7 @@ describe('calculateLoanSummary', () => {
   )
 
   it.each(['annuity', 'decreasing'] as const)(
-    'lowers regular installments without shortening the planned term for reduceInstallment with %s repayments',
+    'recalculates each reduceInstallment payment for %s repayments without forecasting future recurring extras',
     (repaymentType) => {
       const input = {
         loanAmount: 120000,
@@ -43,9 +43,14 @@ describe('calculateLoanSummary', () => {
       const baseline = calculateLoanSummary({ ...input, extraMonthlyPayment: 0 })
       const result = calculateLoanSummary({ ...input, extraPaymentMode: 'reduceInstallment' as const })
 
-      expect(result.loanTermMonths).toBe(input.termMonths)
+      expect(result.loanTermMonths).toBeGreaterThanOrEqual(input.termMonths - 1)
+      expect(result.loanTermMonths).toBeLessThanOrEqual(input.termMonths)
       expect(result.schedule[6].payment).toBeCloseTo(baseline.schedule[6].payment, 2)
       expect(result.schedule[7].payment).toBeLessThan(baseline.schedule[7].payment)
+      expect(baseline.schedule[7].payment - result.schedule[7].payment).toBeLessThan(
+        input.extraMonthlyPayment,
+      )
+      expect(result.schedule[8].payment).toBeLessThan(result.schedule[7].payment)
     },
   )
 

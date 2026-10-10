@@ -197,6 +197,7 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
     reduceTerm: 0,
     reduceInstallment: 0,
   }))
+  const recurringInstallmentPaymentsByMonth = Array.from({ length: termMonths }, () => 0)
 
   scheduleDates.forEach((date, index) => {
     if (
@@ -205,6 +206,9 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
         (!monthlyRecurringStartDate && index + 1 >= startMonth))
     ) {
       extraPaymentsByMonth[index][extraPaymentMode] += extraMonthlyPayment
+      if (extraPaymentMode === 'reduceInstallment') {
+        recurringInstallmentPaymentsByMonth[index] = extraMonthlyPayment
+      }
     }
   })
 
@@ -223,6 +227,10 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
     const effect = extraPayment.effect ?? 'reduceTerm'
     extraPaymentsByMonth[monthIndex][effect] += Math.max(0, Number(extraPayment.amount) || 0)
   }
+
+  const plannedInstallmentExtras = extraPaymentsByMonth.map(
+    (payments, index) => payments.reduceInstallment - recurringInstallmentPaymentsByMonth[index],
+  )
 
   let remainingBalance = loanAmount
   let totalPaid = 0
@@ -245,7 +253,6 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
 
     if (input.repaymentType === 'annuity') {
       if (installmentRecastActive) {
-        const plannedInstallmentExtras = extraPaymentsByMonth.map((payments) => payments.reduceInstallment)
         currentAnnuityPayment = calculatePaymentWithPlannedExtraPayments(
           remainingBalance,
           monthIndex,
@@ -264,9 +271,9 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
       regularPrincipal = Math.min(remainingBalance, Math.max(0, currentAnnuityPayment - interest))
       payment = regularPrincipal + interest
     } else {
-      const plannedFutureExtras = extraPaymentsByMonth
+      const plannedFutureExtras = plannedInstallmentExtras
         .slice(monthIndex)
-        .reduce((sum, payments) => sum + payments.reduceInstallment, 0)
+        .reduce((sum, extra) => sum + extra, 0)
       regularPrincipal = installmentRecastActive
         ? Math.max(0, (remainingBalance - plannedFutureExtras) / monthsRemaining)
         : loanAmount / termMonths
