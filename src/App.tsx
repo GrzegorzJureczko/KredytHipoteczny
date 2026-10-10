@@ -155,15 +155,22 @@ function App() {
     }
 
     setIsAuthMessageVisible(true)
+    const visibleDuration = Math.min(12_000, Math.max(4_000, authMessage.text.trim().length * 45))
+    let clearMessageTimeout: number | undefined
 
     const timeoutId = window.setTimeout(() => {
       setIsAuthMessageVisible(false)
-      window.setTimeout(() => {
+      clearMessageTimeout = window.setTimeout(() => {
         setAuthMessage((current) => ({ ...current, text: '' }))
       }, 350)
-    }, 2500)
+    }, visibleDuration)
 
-    return () => window.clearTimeout(timeoutId)
+    return () => {
+      window.clearTimeout(timeoutId)
+      if (clearMessageTimeout !== undefined) {
+        window.clearTimeout(clearMessageTimeout)
+      }
+    }
   }, [authMessage.text])
 
   const loadSavedCalculations = async (userId: string) => {
@@ -763,7 +770,7 @@ function App() {
             style={{
               opacity: isAuthMessageVisible ? 1 : 0,
               transform: isAuthMessageVisible ? 'translateY(0)' : 'translateY(-6px)',
-              maxHeight: isAuthMessageVisible ? '80px' : '0px',
+              maxHeight: isAuthMessageVisible ? '240px' : '0px',
               marginTop: isAuthMessageVisible ? '14px' : '0px',
               paddingTop: isAuthMessageVisible ? '10px' : '0px',
               paddingBottom: isAuthMessageVisible ? '10px' : '0px',
