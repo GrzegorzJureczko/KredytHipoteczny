@@ -267,7 +267,7 @@ function App() {
       const { data, error } = await supabase.auth.signUp({ email, password: authPassword })
 
       if (error) {
-        setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+        setAuthMessage({ type: 'error', text: getAuthErrorMessage(error, 'register') })
         return
       }
 
@@ -294,7 +294,7 @@ function App() {
       const { error } = await supabase.auth.signInWithPassword({ email, password: authPassword })
 
       if (error) {
-        setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+        setAuthMessage({ type: 'error', text: getAuthErrorMessage(error, 'login') })
         return
       }
 
@@ -309,7 +309,7 @@ function App() {
     })
 
     if (error) {
-      setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+      setAuthMessage({ type: 'error', text: getAuthErrorMessage(error, 'reset') })
       return
     }
 
