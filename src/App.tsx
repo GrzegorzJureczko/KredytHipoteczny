@@ -264,18 +264,26 @@ function App() {
         return
       }
 
-      const { error } = await supabase.auth.signUp({ email, password: authPassword })
+      const { data, error } = await supabase.auth.signUp({ email, password: authPassword })
 
       if (error) {
         setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
         return
       }
 
-      setCurrentUserEmail(email)
-      setAuthMessage({
-        type: 'success',
-        text: 'Konto zostało utworzone. Sprawdź e-mail, aby potwierdzić konto.',
-      })
+      const sessionUser = data.session?.user
+      if (sessionUser?.id) {
+        setCurrentUserEmail(sessionUser.email ?? email)
+        setCurrentUserId(sessionUser.id)
+        await loadSavedCalculations(sessionUser.id)
+        setAuthMessage({ type: 'success', text: 'Konto zostało utworzone i zalogowano.' })
+      } else {
+        setAuthMode('login')
+        setAuthMessage({
+          type: 'success',
+          text: 'Konto zostało utworzone. Potwierdź adres e-mail, a następnie zaloguj się.',
+        })
+      }
       setAuthEmail('')
       setAuthPassword('')
       setAuthConfirmPassword('')

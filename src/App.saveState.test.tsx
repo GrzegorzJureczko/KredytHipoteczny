@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
@@ -39,6 +39,7 @@ const { mockSupabase } = vi.hoisted(() => ({
           },
         },
       })),
+      signUp: vi.fn(),
       signOut: vi.fn(),
     },
     from: vi.fn(),
@@ -214,5 +215,41 @@ describe('save button behavior', () => {
     })
 
     expect((saveButton).textContent).toContain('Moja kalkulacja')
+  })
+})
+
+describe('registration flow', () => {
+  it('does not show a user as logged in until email confirmation creates a session', async () => {
+    mockSupabase.auth.getSession.mockResolvedValue({ data: { session: null } })
+    mockSupabase.auth.signUp.mockResolvedValue({
+      data: { user: { email: 'new@example.com' }, session: null },
+      error: null,
+    })
+
+    const { container } = render(<App />)
+    const registration = within(container)
+
+    fireEvent.click(registration.getByRole('button', { name: 'Rejestracja' }))
+    fireEvent.change(registration.getByPlaceholderText('twoj@email.pl'), {
+      target: { value: 'new@example.com' },
+    })
+    fireEvent.change(registration.getByPlaceholderText('Minimum 6 znaków'), {
+      target: { value: 'password123' },
+    })
+    fireEvent.change(registration.getByPlaceholderText('Potwierdź hasło'), {
+      target: { value: 'password123' },
+    })
+    fireEvent.click(registration.getByRole('button', { name: 'Utwórz konto' }))
+
+    expect(
+      await registration.findByText(
+        'Konto zostało utworzone. Potwierdź adres e-mail, a następnie zaloguj się.',
+      ),
+    ).toBeTruthy()
+    expect(registration.queryByRole('button', { name: 'Wyloguj' })).toBeNull()
+    expect(mockSupabase.auth.signUp).toHaveBeenCalledWith({
+      email: 'new@example.com',
+      password: 'password123',
+    })
   })
 })
