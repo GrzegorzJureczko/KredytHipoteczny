@@ -147,4 +147,72 @@ describe('save button behavior', () => {
       expect(mockSupabase.from).toHaveBeenCalledWith('saved_calculations')
     })
   })
+
+  it('shows the save new calculation action when panel is expanded and saves a new record', async () => {
+    render(<App />)
+
+    const saveButton = document.querySelector('.save-disk-button') as HTMLButtonElement
+    fireEvent.click(saveButton)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Zapisz nową kalkulację' })).toBeTruthy()
+    })
+
+    const nameInput = screen.getByPlaceholderText('Nazwa kalkulacji') as HTMLInputElement
+    fireEvent.change(nameInput, { target: { value: 'Nowa kalkulacja' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zapisz nową kalkulację' }))
+
+    await waitFor(() => {
+      expect(mockSupabase.from).toHaveBeenCalledWith('saved_calculations')
+    })
+
+    expect((screen.getByPlaceholderText('Nazwa kalkulacji') as HTMLInputElement).value).toBe('')
+  })
+
+  it('saves a fresh record while a previous saved calculation is loaded', async () => {
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: 'Wczytaj' }).length).toBeGreaterThan(0)
+    })
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Wczytaj' })[0])
+
+    const saveButton = document.querySelector('.save-disk-button') as HTMLButtonElement
+    fireEvent.click(saveButton)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Zapisz nową kalkulację' })).toBeTruthy()
+    })
+
+    const nameInput = screen.getByPlaceholderText('Nazwa kalkulacji') as HTMLInputElement
+    fireEvent.change(nameInput, { target: { value: 'Kopia kalkulacji' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Zapisz nową kalkulację' }))
+
+    await waitFor(() => {
+      expect(mockSupabase.from).toHaveBeenCalledWith('saved_calculations')
+    })
+
+    expect((screen.getByPlaceholderText('Nazwa kalkulacji') as HTMLInputElement).value).toBe('')
+  })
+
+  it('keeps the loaded record name visible while creating a new save draft', async () => {
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: 'Wczytaj' }).length).toBeGreaterThan(0)
+    })
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Wczytaj' })[0])
+
+    const saveButton = document.querySelector('.save-disk-button') as HTMLButtonElement
+    fireEvent.click(saveButton)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Zapisz nową kalkulację' })).toBeTruthy()
+    })
+
+    expect((saveButton).textContent).toContain('Moja kalkulacja')
+  })
 })
