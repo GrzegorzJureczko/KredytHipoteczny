@@ -219,6 +219,20 @@ describe('save button behavior', () => {
 })
 
 describe('registration flow', () => {
+  it('allows selecting the month and year independently', async () => {
+    render(<App />)
+
+    const month = screen.getAllByRole('combobox', { name: 'Miesiąc' })[0]
+    const year = screen.getAllByRole('combobox', { name: 'Rok' })[0]
+    const nextYear = String(new Date().getFullYear() + 5)
+
+    fireEvent.change(year, { target: { value: nextYear } })
+    fireEvent.change(month, { target: { value: '11' } })
+
+    expect((year as HTMLSelectElement).value).toBe(nextYear)
+    expect((month as HTMLSelectElement).value).toBe('11')
+  })
+
   it('does not show a user as logged in until email confirmation creates a session', async () => {
     mockSupabase.auth.getSession.mockResolvedValue({ data: { session: null } })
     mockSupabase.auth.signUp.mockResolvedValue({

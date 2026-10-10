@@ -49,18 +49,33 @@ type FormState = {
   propertyInsuranceRatePercent: number
 }
 
+const toLocalDateString = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+const getMonthYearParts = (value: string) => {
+  const [yearValue, monthValue] = value.slice(0, 7).split('-')
+  const now = new Date()
+  const year = Number(yearValue)
+  const month = Number(monthValue)
+
+  return {
+    year: Number.isInteger(year) && year > 0 ? year : now.getFullYear(),
+    month: Number.isInteger(month) && month >= 1 && month <= 12 ? month : now.getMonth() + 1,
+  }
+}
+
 const getNextMonthDate = () => {
   const date = new Date()
   date.setDate(1)
   date.setMonth(date.getMonth() + 1)
-  return date.toISOString().slice(0, 10)
+  return toLocalDateString(date)
 }
 
 const getDateOffsetMonths = (offsetMonths: number) => {
   const date = new Date()
   date.setDate(1)
   date.setMonth(date.getMonth() + offsetMonths)
-  return date.toISOString().slice(0, 10)
+  return toLocalDateString(date)
 }
 
 const initialForm: FormState = {
@@ -106,6 +121,51 @@ const monthNames = [
   'listopad',
   'grudzień',
 ]
+
+const MonthYearInput = ({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+}) => {
+  const { year, month } = getMonthYearParts(value)
+  const currentYear = new Date().getFullYear()
+  const firstYear = Math.min(currentYear - 20, year)
+  const lastYear = Math.max(currentYear + 40, year)
+  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index)
+
+  const updateDate = (nextYear: number, nextMonth: number) => {
+    onChange(`${nextYear}-${String(nextMonth).padStart(2, '0')}-01`)
+  }
+
+  return (
+    <div className="month-year-picker">
+      <select
+        aria-label="Miesiąc"
+        value={month}
+        onChange={(event) => updateDate(year, Number(event.target.value))}
+      >
+        {monthNames.map((monthName, index) => (
+          <option key={monthName} value={index + 1}>
+            {monthName[0].toUpperCase() + monthName.slice(1)}
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label="Rok"
+        value={year}
+        onChange={(event) => updateDate(Number(event.target.value), month)}
+      >
+        {years.map((yearOption) => (
+          <option key={yearOption} value={yearOption}>
+            {yearOption}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
 
 const FieldTooltip = ({ id, text }: { id: string; text: string }) => (
   <span className="field-tooltip-trigger" tabIndex={0} aria-describedby={id} aria-label={text}>
@@ -516,7 +576,7 @@ function App() {
     const date = new Date()
     date.setDate(1)
     date.setMonth(date.getMonth() + 1)
-    return date.toISOString().slice(0, 10)
+    return toLocalDateString(date)
   }, [])
 
   const summary = useMemo(
@@ -937,14 +997,6 @@ function App() {
                 form.rateChanges.map((entry) => (
                   <div key={entry.id} className="extra-payment-row">
                     <label>
-                      <span>Data zmiany</span>
-                      <input
-                        type="date"
-                        value={entry.date}
-                        onChange={(event) => updateRateChange(entry.id, 'date', event.target.value)}
-                      />
-                    </label>
-                    <label>
                       <span>Nowe oprocentowanie</span>
                       <input
                         type="number"
@@ -954,6 +1006,13 @@ function App() {
                         onChange={(event) =>
                           updateRateChange(entry.id, 'rate', Number(event.target.value))
                         }
+                      />
+                    </label>
+                    <label>
+                      <span>Data zmiany</span>
+                      <MonthYearInput
+                        value={entry.date}
+                        onChange={(value) => updateRateChange(entry.id, 'date', value)}
                       />
                     </label>
                     <button
@@ -971,10 +1030,10 @@ function App() {
 
           <div className="subsection">
             <h3>Nadpłaty</h3>
-            <div className="field-grid compact">
+            <div className="field-grid compact overpayment-settings">
               <label>
                 <span className="field-title">
-                  Dodatkowa wpłata miesięczna
+                  Regularna wpłata miesięczna
                   <FieldTooltip id="recurring-overpayment-help" text="Stała nadpłata powtarzana co miesiąc" />
                 </span>
                 <input
@@ -992,16 +1051,13 @@ function App() {
                   Data rozpoczęcia nadpłaty
                   <FieldTooltip id="overpayment-start-help" text="Od kiedy ma zaczynać działać stała nadpłata" />
                 </span>
-                <input
-                  type="date"
+                <MonthYearInput
                   value={form.extraMonthlyPaymentStartDate}
-                  onChange={(event) =>
-                    updateField('extraMonthlyPaymentStartDate', event.target.value)
-                  }
+                  onChange={(value) => updateField('extraMonthlyPaymentStartDate', value)}
                 />
               </label>
 
-              <label className="full-width">
+              <label>
                 <span className="field-title">
                   Efekt nadpłaty
                   <FieldTooltip id="overpayment-effect-help" text="Co ma się zmienić po dodatkowej wpłacie" />
@@ -1044,12 +1100,9 @@ function App() {
                     </label>
                     <label>
                       <span>Data</span>
-                      <input
-                        type="date"
+                      <MonthYearInput
                         value={payment.date}
-                        onChange={(event) =>
-                          updateExtraPayment(payment.id, 'date', event.target.value)
-                        }
+                        onChange={(value) => updateExtraPayment(payment.id, 'date', value)}
                       />
                     </label>
                     <label>

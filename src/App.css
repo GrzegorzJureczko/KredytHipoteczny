@@ -323,6 +323,10 @@ h1 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.field-grid.overpayment-settings {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .full-width {
   grid-column: 1 / -1;
 }
@@ -339,6 +343,19 @@ label {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+}
+
+.month-year-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(90px, 0.6fr);
+  gap: 8px;
+  width: 100%;
+}
+
+.month-year-picker select {
+  min-width: 0;
+  padding-left: 10px;
+  padding-right: 8px;
 }
 
 .field-tooltip-trigger {
@@ -659,6 +676,7 @@ tbody tr:hover {
   .app-grid,
   .field-grid,
   .field-grid.compact,
+  .field-grid.overpayment-settings,
   .summary-cards,
   .kpi-row,
   .extra-payment-row {

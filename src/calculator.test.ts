@@ -151,6 +151,21 @@ describe('calculateLoanSummary', () => {
     expect(withExtraPayment.schedule[2].interest).toBeLessThan(baseline.schedule[2].interest)
   })
 
+  it('accepts year-month dates and applies a rate change from that month', () => {
+    const result = calculateLoanSummary({
+      loanAmount: 120000,
+      annualRate: 5,
+      termMonths: 12,
+      repaymentType: 'annuity',
+      loanStartDate: '2026-01',
+      rateChanges: [{ date: '2026-03', rate: 6.5 }],
+    })
+
+    expect(result.schedule[0].annualRate).toBe(5)
+    expect(result.schedule[1].annualRate).toBe(5)
+    expect(result.schedule[2].annualRate).toBe(6.5)
+  })
+
   it('caps an extra payment at the amount needed to pay off the remaining balance', () => {
     const result = calculateLoanSummary({
       loanAmount: 10000,

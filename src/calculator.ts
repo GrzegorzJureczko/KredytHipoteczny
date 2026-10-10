@@ -76,6 +76,27 @@ const parseDate = (value?: string) => {
     return null
   }
 
+  const dateOnlyMatch = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value)
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1])
+    const month = Number(dateOnlyMatch[2])
+    const day = Number(dateOnlyMatch[3] ?? 1)
+    const date = new Date(year, month - 1, day)
+
+    if (
+      month < 1 ||
+      month > 12 ||
+      day < 1 ||
+      date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day
+    ) {
+      return null
+    }
+
+    return date
+  }
+
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
     return null
