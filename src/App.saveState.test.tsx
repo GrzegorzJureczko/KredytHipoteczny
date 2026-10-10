@@ -250,6 +250,7 @@ describe('registration flow', () => {
     expect(mockSupabase.auth.signUp).toHaveBeenCalledWith({
       email: 'new@example.com',
       password: 'password123',
+      options: { emailRedirectTo: `${window.location.origin}/` },
     })
   })
 })

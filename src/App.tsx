@@ -107,6 +107,15 @@ const monthNames = [
   'grudzień',
 ]
 
+const FieldTooltip = ({ id, text }: { id: string; text: string }) => (
+  <span className="field-tooltip-trigger" tabIndex={0} aria-describedby={id} aria-label={text}>
+    <span aria-hidden="true">i</span>
+    <span className="field-tooltip" id={id} role="tooltip">
+      {text}
+    </span>
+  </span>
+)
+
 type SavedCalculationEntry = {
   id: string
   name: string
@@ -264,7 +273,11 @@ function App() {
         return
       }
 
-      const { data, error } = await supabase.auth.signUp({ email, password: authPassword })
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: authPassword,
+        options: { emailRedirectTo: `${window.location.origin}/` },
+      })
 
       if (error) {
         setAuthMessage({ type: 'error', text: getAuthErrorMessage(error, 'register') })
@@ -831,8 +844,10 @@ function App() {
 
           <div className="field-grid">
             <label>
-              <span>Kwota kredytu</span>
-              <small>Całkowita kwota, którą chcesz pożyczyć</small>
+              <span className="field-title">
+                Kwota kredytu
+                <FieldTooltip id="loan-amount-help" text="Całkowita kwota, którą chcesz pożyczyć" />
+              </span>
               <input
                 type="number"
                 min="0"
@@ -852,8 +867,10 @@ function App() {
             </label>
 
             <label>
-              <span>Oprocentowanie</span>
-              <small>Roczna stopa procentowa kredytu</small>
+              <span className="field-title">
+                Oprocentowanie
+                <FieldTooltip id="loan-rate-help" text="Roczna stopa procentowa kredytu" />
+              </span>
               <input
                 type="number"
                 min="0"
@@ -864,8 +881,10 @@ function App() {
             </label>
 
             <label>
-              <span>Okres kredytowania</span>
-              <small>Na ile lat rozciągasz spłatę</small>
+              <span className="field-title">
+                Okres kredytowania
+                <FieldTooltip id="loan-term-help" text="Na ile lat rozciągasz spłatę" />
+              </span>
               <select
                 value={form.years}
                 onChange={(event) => updateField('years', Number(event.target.value))}
@@ -879,8 +898,10 @@ function App() {
             </label>
 
             <label>
-              <span>Rodzaj raty</span>
-              <small>Wybierz wariant składanych płatności</small>
+              <span className="field-title">
+                Rodzaj raty
+                <FieldTooltip id="repayment-type-help" text="Wybierz wariant składanych płatności" />
+              </span>
               <select
                 value={form.repaymentType}
                 onChange={(event) =>
@@ -945,8 +966,10 @@ function App() {
             <h3>Nadpłaty</h3>
             <div className="field-grid compact">
               <label>
-                <span>Dodatkowa wpłata miesięczna</span>
-                <small>Stała nadpłata powtarzana co miesiąc</small>
+                <span className="field-title">
+                  Dodatkowa wpłata miesięczna
+                  <FieldTooltip id="recurring-overpayment-help" text="Stała nadpłata powtarzana co miesiąc" />
+                </span>
                 <input
                   type="number"
                   min="0"
@@ -958,8 +981,10 @@ function App() {
               </label>
 
               <label>
-                <span>Data rozpoczęcia nadpłaty</span>
-                <small>Od kiedy ma zaczynać działać stała nadpłata</small>
+                <span className="field-title">
+                  Data rozpoczęcia nadpłaty
+                  <FieldTooltip id="overpayment-start-help" text="Od kiedy ma zaczynać działać stała nadpłata" />
+                </span>
                 <input
                   type="date"
                   value={form.extraMonthlyPaymentStartDate}
@@ -970,8 +995,10 @@ function App() {
               </label>
 
               <label className="full-width">
-                <span>Efekt nadpłaty</span>
-                <small>Co ma się zmienić po dodatkowej wpłacie</small>
+                <span className="field-title">
+                  Efekt nadpłaty
+                  <FieldTooltip id="overpayment-effect-help" text="Co ma się zmienić po dodatkowej wpłacie" />
+                </span>
                 <select
                   value={form.extraPaymentMode}
                   onChange={(event) =>
