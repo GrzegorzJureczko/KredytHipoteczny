@@ -982,6 +982,135 @@ function App() {
           </div>
 
           <div className="subsection">
+            <h3>Koszty około-kredytowe</h3>
+            <div className="field-grid compact">
+              <label>
+                <span>Prowizja</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.applicationFee}
+                  onChange={(event) => updateField('applicationFee', Number(event.target.value))}
+                />
+              </label>
+
+              <label>
+                <span>Notariusz / dokumenty</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.notary}
+                  onChange={(event) => updateField('notary', Number(event.target.value))}
+                />
+              </label>
+
+              <label>
+                <span>Wycena / ekspertyza</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.appraisal}
+                  onChange={(event) => updateField('appraisal', Number(event.target.value))}
+                />
+              </label>
+
+              <label>
+                <span>Prowizja / inne</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.commission}
+                  onChange={(event) => updateField('commission', Number(event.target.value))}
+                />
+              </label>
+            </div>
+
+            <div className="insurance-block">
+              <h4>Ubezpieczenie na życie</h4>
+              <div className="field-grid compact">
+                <label>
+                  <span>Składka miesięczna</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.lifeInsuranceMonthlyPremium}
+                    onChange={(event) =>
+                      updateField('lifeInsuranceMonthlyPremium', Number(event.target.value))
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>Czas ubezpieczenia</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.lifeInsuranceMonths}
+                    onChange={(event) => updateField('lifeInsuranceMonths', Number(event.target.value))}
+                  />
+                </label>
+
+                <label className="full-width">
+                  <span>Jednostka czasu</span>
+                  <select
+                    value={form.lifeInsuranceDurationUnit}
+                    onChange={(event) =>
+                      updateField('lifeInsuranceDurationUnit', event.target.value as 'months' | 'years')
+                    }
+                  >
+                    <option value="months">Miesiące</option>
+                    <option value="years">Lata</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="insurance-block">
+              <h4>Ubezpieczenie nieruchomości</h4>
+              <div className="field-grid compact">
+                <label>
+                  <span>Stawka ubezpieczenia</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.propertyInsuranceRatePercent}
+                    onChange={(event) =>
+                      updateField('propertyInsuranceRatePercent', Number(event.target.value))
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>Częstotliwość składki</span>
+                  <select
+                    value={form.propertyInsuranceFrequency}
+                    onChange={(event) =>
+                      updateField('propertyInsuranceFrequency', event.target.value as 'monthly' | 'annual')
+                    }
+                  >
+                    <option value="monthly">Miesięcznie</option>
+                    <option value="annual">Rocznie</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Podstawa kalkulacji</span>
+                  <select
+                    value={form.propertyInsuranceBasis}
+                    onChange={(event) =>
+                      updateField('propertyInsuranceBasis', event.target.value as 'propertyValue' | 'loanAmount')
+                    }
+                  >
+                    <option value="propertyValue">Wartość nieruchomości</option>
+                    <option value="loanAmount">Kwota kredytu</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="subsection">
             <h3>Zmiany oprocentowania</h3>
             <div className="extra-payment-list">
               <div className="extra-payment-header">
@@ -1134,134 +1263,6 @@ function App() {
             </div>
           </div>
 
-          <div className="subsection">
-            <h3>Koszty około-kredytowe</h3>
-            <div className="field-grid compact">
-              <label>
-                <span>Prowizja</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.applicationFee}
-                  onChange={(event) => updateField('applicationFee', Number(event.target.value))}
-                />
-              </label>
-
-              <label>
-                <span>Notariusz / dokumenty</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.notary}
-                  onChange={(event) => updateField('notary', Number(event.target.value))}
-                />
-              </label>
-
-              <label>
-                <span>Wycena / ekspertyza</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.appraisal}
-                  onChange={(event) => updateField('appraisal', Number(event.target.value))}
-                />
-              </label>
-
-              <label>
-                <span>Prowizja / inne</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.commission}
-                  onChange={(event) => updateField('commission', Number(event.target.value))}
-                />
-              </label>
-            </div>
-
-            <div className="insurance-block">
-              <h4>Ubezpieczenie na życie</h4>
-              <div className="field-grid compact">
-                <label>
-                  <span>Składka miesięczna</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.lifeInsuranceMonthlyPremium}
-                    onChange={(event) =>
-                      updateField('lifeInsuranceMonthlyPremium', Number(event.target.value))
-                    }
-                  />
-                </label>
-
-                <label>
-                  <span>Czas ubezpieczenia</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.lifeInsuranceMonths}
-                    onChange={(event) => updateField('lifeInsuranceMonths', Number(event.target.value))}
-                  />
-                </label>
-
-                <label className="full-width">
-                  <span>Jednostka czasu</span>
-                  <select
-                    value={form.lifeInsuranceDurationUnit}
-                    onChange={(event) =>
-                      updateField('lifeInsuranceDurationUnit', event.target.value as 'months' | 'years')
-                    }
-                  >
-                    <option value="months">Miesiące</option>
-                    <option value="years">Lata</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div className="insurance-block">
-              <h4>Ubezpieczenie nieruchomości</h4>
-              <div className="field-grid compact">
-                <label>
-                  <span>Stawka ubezpieczenia</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.propertyInsuranceRatePercent}
-                    onChange={(event) =>
-                      updateField('propertyInsuranceRatePercent', Number(event.target.value))
-                    }
-                  />
-                </label>
-
-                <label>
-                  <span>Częstotliwość składki</span>
-                  <select
-                    value={form.propertyInsuranceFrequency}
-                    onChange={(event) =>
-                      updateField('propertyInsuranceFrequency', event.target.value as 'monthly' | 'annual')
-                    }
-                  >
-                    <option value="monthly">Miesięcznie</option>
-                    <option value="annual">Rocznie</option>
-                  </select>
-                </label>
-
-                <label>
-                  <span>Podstawa kalkulacji</span>
-                  <select
-                    value={form.propertyInsuranceBasis}
-                    onChange={(event) =>
-                      updateField('propertyInsuranceBasis', event.target.value as 'propertyValue' | 'loanAmount')
-                    }
-                  >
-                    <option value="propertyValue">Wartość nieruchomości</option>
-                    <option value="loanAmount">Kwota kredytu</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-          </div>
         </section>
 
         <aside className="panel summary-panel">
