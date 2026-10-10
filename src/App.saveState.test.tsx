@@ -90,6 +90,24 @@ beforeEach(() => {
 })
 
 describe('save button behavior', () => {
+  it('allows expanding and collapsing additional calculation sections', async () => {
+    render(<App />)
+
+    for (const title of ['Koszty około-kredytowe', 'Zmiany oprocentowania', 'Nadpłaty']) {
+      const sectionTitle = screen.getByText(title)
+      const section = sectionTitle.closest('details')
+
+      expect(section).not.toBeNull()
+      expect((section as HTMLDetailsElement).open).toBe(false)
+
+      fireEvent.click(sectionTitle)
+      expect((section as HTMLDetailsElement).open).toBe(true)
+
+      fireEvent.click(sectionTitle)
+      expect((section as HTMLDetailsElement).open).toBe(false)
+    }
+  })
+
   it('is greyed out right after login and clicking it expands saved calculations', async () => {
     render(<App />)
 

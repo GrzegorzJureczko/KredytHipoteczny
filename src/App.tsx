@@ -981,8 +981,8 @@ function App() {
             </label>
           </div>
 
-          <div className="subsection">
-            <h3>Koszty około-kredytowe</h3>
+          <details className="subsection collapsible-section">
+            <summary>Koszty około-kredytowe</summary>
             <div className="field-grid compact">
               <label>
                 <span>Prowizja</span>
@@ -1108,10 +1108,10 @@ function App() {
                 </label>
               </div>
             </div>
-          </div>
+          </details>
 
-          <div className="subsection">
-            <h3>Zmiany oprocentowania</h3>
+          <details className="subsection collapsible-section">
+            <summary>Zmiany oprocentowania</summary>
             <div className="extra-payment-list">
               <div className="extra-payment-header">
                 <h4>Daty zmiany stopy</h4>
@@ -1155,10 +1155,10 @@ function App() {
                 ))
               )}
             </div>
-          </div>
+          </details>
 
-          <div className="subsection">
-            <h3>Nadpłaty</h3>
+          <details className="subsection collapsible-section">
+            <summary>Nadpłaty</summary>
             <div className="field-grid compact overpayment-settings">
               <label>
                 <span className="field-title">
@@ -1261,7 +1261,7 @@ function App() {
                 ))
               )}
             </div>
-          </div>
+          </details>
 
         </section>
 
