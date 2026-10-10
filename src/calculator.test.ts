@@ -2,6 +2,53 @@ import { describe, expect, it } from 'vitest'
 import { calculateLoanSummary } from './calculator'
 
 describe('calculateLoanSummary', () => {
+  it.each(['annuity', 'decreasing'] as const)(
+    'keeps the scheduled repayment and shortens the term for reduceTerm with %s repayments',
+    (repaymentType) => {
+      const input = {
+        loanAmount: 120000,
+        annualRate: 6,
+        termMonths: 60,
+        repaymentType,
+        loanStartDate: '2026-01-01',
+        extraMonthlyPayment: 500,
+        extraMonthlyPaymentStartDate: '2026-07-01',
+      }
+      const baseline = calculateLoanSummary({ ...input, extraMonthlyPayment: 0 })
+      const result = calculateLoanSummary({ ...input, extraPaymentMode: 'reduceTerm' as const })
+
+      expect(result.loanTermMonths).toBeLessThan(input.termMonths)
+      result.schedule.slice(0, -1).forEach((row, index) => {
+        if (repaymentType === 'annuity') {
+          expect(row.payment).toBeCloseTo(baseline.schedule[index].payment, 2)
+        } else {
+          expect(row.principal - row.extraPayment).toBeCloseTo(baseline.schedule[index].principal, 2)
+        }
+      })
+    },
+  )
+
+  it.each(['annuity', 'decreasing'] as const)(
+    'lowers regular installments without shortening the planned term for reduceInstallment with %s repayments',
+    (repaymentType) => {
+      const input = {
+        loanAmount: 120000,
+        annualRate: 6,
+        termMonths: 60,
+        repaymentType,
+        loanStartDate: '2026-01-01',
+        extraMonthlyPayment: 500,
+        extraMonthlyPaymentStartDate: '2026-07-01',
+      }
+      const baseline = calculateLoanSummary({ ...input, extraMonthlyPayment: 0 })
+      const result = calculateLoanSummary({ ...input, extraPaymentMode: 'reduceInstallment' as const })
+
+      expect(result.loanTermMonths).toBe(input.termMonths)
+      expect(result.schedule[6].payment).toBeCloseTo(baseline.schedule[6].payment, 2)
+      expect(result.schedule[7].payment).toBeLessThan(baseline.schedule[7].payment)
+    },
+  )
+
   it('calculates annuity for a standard mortgage', () => {
     const result = calculateLoanSummary({
       loanAmount: 300000,
@@ -48,8 +95,9 @@ describe('calculateLoanSummary', () => {
     expect(result.schedule[0].payment).toBeCloseTo(baselinePayment, 5)
     expect(firstExtraMonth.payment).toBeCloseTo(baselinePayment, 5)
     expect(firstExtraMonth.extraPayment).toBeGreaterThan(0)
-    expect(laterMonth.payment).toBeLessThan(baselinePayment)
+    expect(laterMonth.payment).toBeCloseTo(baselinePayment, 2)
     expect(laterMonth.extraPayment).toBeGreaterThan(0)
+    expect(result.loanTermMonths).toBeLessThan(180)
   })
 
   it('supports multiple one-off extra payments on different dates', () => {
@@ -68,9 +116,49 @@ describe('calculateLoanSummary', () => {
 
     expect(result.schedule[13].payment).toBeCloseTo(result.schedule[0].payment, 2)
     expect(result.schedule[13].extraPayment).toBeGreaterThan(0)
-    expect(result.schedule[26].payment).toBeLessThan(result.schedule[0].payment)
+    expect(result.schedule[26].payment).toBeCloseTo(result.schedule[0].payment, 2)
     expect(result.schedule[26].extraPayment).toBeGreaterThan(0)
+    expect(result.loanTermMonths).toBeLessThan(180)
     expect(result.remainingBalance).toBeLessThan(300000)
+  })
+
+  it('applies an extra payment to interest calculations from the following month', () => {
+    const input = {
+      loanAmount: 120000,
+      annualRate: 12,
+      termMonths: 12,
+      repaymentType: 'annuity' as const,
+      loanStartDate: '2026-01-01',
+    }
+    const baseline = calculateLoanSummary(input)
+    const withExtraPayment = calculateLoanSummary({
+      ...input,
+      extraPayments: [{ amount: 10000, date: '2026-02-15' }],
+    })
+
+    expect(withExtraPayment.schedule[1].extraPayment).toBe(10000)
+    expect(withExtraPayment.schedule[1].interest).toBe(baseline.schedule[1].interest)
+    expect(withExtraPayment.schedule[1].payment).toBe(baseline.schedule[1].payment)
+    expect(withExtraPayment.schedule[2].interest).toBeLessThan(baseline.schedule[2].interest)
+  })
+
+  it('caps an extra payment at the amount needed to pay off the remaining balance', () => {
+    const result = calculateLoanSummary({
+      loanAmount: 10000,
+      annualRate: 12,
+      termMonths: 12,
+      repaymentType: 'annuity',
+      loanStartDate: '2026-01-01',
+      extraMonthlyPayment: 20000,
+      extraMonthlyPaymentStartDate: '2026-01-01',
+      extraPaymentMode: 'reduceTerm',
+    })
+    const finalRow = result.schedule[0]
+
+    expect(finalRow.remainingBalance).toBe(0)
+    expect(finalRow.principal).toBe(10000)
+    expect(finalRow.extraPayment).toBeLessThan(20000)
+    expect(result.totalPaid).toBeCloseTo(finalRow.payment + finalRow.extraPayment, 2)
   })
 
   it('uses the latest valid rate change when several changes occur over time', () => {

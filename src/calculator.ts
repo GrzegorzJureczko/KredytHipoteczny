@@ -107,6 +107,56 @@ const getEffectiveAnnualRate = (monthDate: Date, baseRate: number, rateChanges: 
   return Math.max(0, effectiveRate)
 }
 
+const calculatePaymentWithPlannedExtraPayments = (
+  balance: number,
+  startMonthIndex: number,
+  annualRates: number[],
+  plannedExtraPayments: number[],
+) => {
+  const remainingMonths = annualRates.length - startMonthIndex
+  if (remainingMonths <= 0 || balance <= 0) {
+    return 0
+  }
+
+  const remainingBalanceAfterPayments = (payment: number) => {
+    let projectedBalance = balance
+
+    for (let index = startMonthIndex; index < annualRates.length; index++) {
+      const interest = projectedBalance * (annualRates[index] / 100 / 12)
+      const principal = Math.min(projectedBalance, Math.max(0, payment - interest))
+      const extraPayment = Math.min(
+        Math.max(0, projectedBalance - principal),
+        plannedExtraPayments[index],
+      )
+      projectedBalance -= principal + extraPayment
+
+      if (projectedBalance <= 0) {
+        return 0
+      }
+    }
+
+    return projectedBalance
+  }
+
+  let lowerPayment = 0
+  let upperPayment = balance
+
+  while (remainingBalanceAfterPayments(upperPayment) > 0) {
+    upperPayment *= 2
+  }
+
+  for (let iteration = 0; iteration < 60; iteration++) {
+    const candidatePayment = (lowerPayment + upperPayment) / 2
+    if (remainingBalanceAfterPayments(candidatePayment) > 0) {
+      lowerPayment = candidatePayment
+    } else {
+      upperPayment = candidatePayment
+    }
+  }
+
+  return upperPayment
+}
+
 export function calculateLoanSummary(input: LoanInput): LoanSummary {
   const loanAmount = Math.max(0, Number(input.loanAmount) || 0)
   const annualRate = Math.max(0, Number(input.annualRate) || 0)
@@ -133,84 +183,105 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
   }
 
   const schedule: LoanScheduleRow[] = []
+  const loanStartMonth = new Date(loanStartDate)
+  loanStartMonth.setDate(1)
+  const scheduleDates = Array.from({ length: termMonths }, (_, index) => {
+    const date = new Date(loanStartMonth)
+    date.setMonth(date.getMonth() + index)
+    return date
+  })
+  const annualRates = scheduleDates.map((date) =>
+    getEffectiveAnnualRate(date, annualRate, rateChanges),
+  )
+  const extraPaymentsByMonth = Array.from({ length: termMonths }, () => ({
+    reduceTerm: 0,
+    reduceInstallment: 0,
+  }))
+
+  scheduleDates.forEach((date, index) => {
+    if (
+      extraMonthlyPayment > 0 &&
+      ((monthlyRecurringStartDate && toMonthKey(date) >= toMonthKey(monthlyRecurringStartDate)) ||
+        (!monthlyRecurringStartDate && index + 1 >= startMonth))
+    ) {
+      extraPaymentsByMonth[index][extraPaymentMode] += extraMonthlyPayment
+    }
+  })
+
+  for (const extraPayment of extraPayments) {
+    const paymentDate = parseDate(extraPayment.date)
+    if (!paymentDate) {
+      continue
+    }
+
+    const paymentMonthKey = toMonthKey(paymentDate)
+    const monthIndex = scheduleDates.findIndex((date) => toMonthKey(date) === paymentMonthKey)
+    if (monthIndex < 0) {
+      continue
+    }
+
+    const effect = extraPayment.effect ?? 'reduceTerm'
+    extraPaymentsByMonth[monthIndex][effect] += Math.max(0, Number(extraPayment.amount) || 0)
+  }
+
   let remainingBalance = loanAmount
   let totalPaid = 0
   let totalInterest = 0
+  let installmentRecastActive = false
+  let currentAnnuityPayment = monthlyPayment
+  let previousAnnualRate = annualRates[0] ?? annualRate
 
   for (let month = 1; month <= termMonths; month++) {
-    const currentDate = new Date(loanStartDate)
-    currentDate.setDate(1)
-    currentDate.setMonth(currentDate.getMonth() + (month - 1))
-
-    const currentAnnualRate = getEffectiveAnnualRate(currentDate, annualRate, rateChanges)
+    const monthIndex = month - 1
+    const currentAnnualRate = annualRates[monthIndex]
     const currentMonthlyRate = currentAnnualRate / 100 / 12
-    const currentMonthKey = toMonthKey(currentDate)
-
-    const recurringExtraPayment =
-      extraMonthlyPayment > 0 &&
-      ((monthlyRecurringStartDate && toMonthKey(currentDate) >= toMonthKey(monthlyRecurringStartDate)) ||
-        (!monthlyRecurringStartDate && month >= startMonth))
-        ? extraMonthlyPayment
-        : 0
-
-    const oneOffPaymentsForMonth = extraPayments.filter((payment) => {
-      const paymentDate = parseDate(payment.date)
-      return paymentDate ? toMonthKey(paymentDate) === currentMonthKey : false
-    })
-
-    const reduceTermExtra =
-      (extraPaymentMode === 'reduceTerm' ? recurringExtraPayment : 0) +
-      oneOffPaymentsForMonth.reduce((sum, payment) => {
-        const effect = payment.effect ?? 'reduceTerm'
-        return sum + (effect === 'reduceTerm' ? Math.max(0, Number(payment.amount) || 0) : 0)
-      }, 0)
-
-    const reduceInstallmentExtra =
-      (extraPaymentMode === 'reduceInstallment' ? recurringExtraPayment : 0) +
-      oneOffPaymentsForMonth.reduce((sum, payment) => {
-        const effect = payment.effect ?? 'reduceTerm'
-        return sum + (effect === 'reduceInstallment' ? Math.max(0, Number(payment.amount) || 0) : 0)
-      }, 0)
+    const monthlyExtraPayments = extraPaymentsByMonth[monthIndex]
+    const requestedExtraPayment = monthlyExtraPayments.reduceTerm + monthlyExtraPayments.reduceInstallment
 
     const monthsRemaining = termMonths - month + 1
     const interest = remainingBalance * currentMonthlyRate
-    const scheduledPayment = calculatePaymentForBalance(
-      remainingBalance,
-      monthsRemaining,
-      currentAnnualRate,
-      input.repaymentType,
-    )
-
-    let principal = 0
-    let payment = 0
-    let extraPayment = 0
+    let regularPrincipal: number
+    let payment: number
 
     if (input.repaymentType === 'annuity') {
-      principal = scheduledPayment - interest
-      payment = scheduledPayment
+      if (installmentRecastActive) {
+        const plannedInstallmentExtras = extraPaymentsByMonth.map((payments) => payments.reduceInstallment)
+        currentAnnuityPayment = calculatePaymentWithPlannedExtraPayments(
+          remainingBalance,
+          monthIndex,
+          annualRates,
+          plannedInstallmentExtras,
+        )
+      } else if (currentAnnualRate !== previousAnnualRate) {
+        currentAnnuityPayment = calculatePaymentForBalance(
+          remainingBalance,
+          monthsRemaining,
+          currentAnnualRate,
+          input.repaymentType,
+        )
+      }
+
+      regularPrincipal = Math.min(remainingBalance, Math.max(0, currentAnnuityPayment - interest))
+      payment = regularPrincipal + interest
     } else {
-      principal = remainingBalance / monthsRemaining
-      payment = principal + interest
+      const plannedFutureExtras = extraPaymentsByMonth
+        .slice(monthIndex)
+        .reduce((sum, payments) => sum + payments.reduceInstallment, 0)
+      regularPrincipal = installmentRecastActive
+        ? Math.max(0, (remainingBalance - plannedFutureExtras) / monthsRemaining)
+        : loanAmount / termMonths
+      regularPrincipal = Math.min(remainingBalance, regularPrincipal)
+      payment = regularPrincipal + interest
     }
 
-    if (reduceTermExtra > 0) {
-      principal += reduceTermExtra
-      extraPayment += reduceTermExtra
-    }
-
-    if (reduceInstallmentExtra > 0) {
-      principal += reduceInstallmentExtra
-      extraPayment += reduceInstallmentExtra
-    }
-
-    if (remainingBalance - principal <= 0) {
-      principal = remainingBalance
-      payment = principal + interest
-    }
-
+    const appliedExtraPayment = Math.min(
+      requestedExtraPayment,
+      Math.max(0, remainingBalance - regularPrincipal),
+    )
+    const principal = regularPrincipal + appliedExtraPayment
     remainingBalance = Math.max(0, remainingBalance - principal)
 
-    totalPaid += payment + extraPayment
+    totalPaid += payment + appliedExtraPayment
     totalInterest += interest
 
     schedule.push({
@@ -219,8 +290,13 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
       principal: safeRound(principal),
       interest: safeRound(interest),
       remainingBalance: safeRound(remainingBalance),
-      extraPayment: safeRound(extraPayment),
+      extraPayment: safeRound(appliedExtraPayment),
     })
+
+    if (monthlyExtraPayments.reduceInstallment > 0) {
+      installmentRecastActive = true
+    }
+    previousAnnualRate = currentAnnualRate
 
     if (remainingBalance <= 0) {
       break
