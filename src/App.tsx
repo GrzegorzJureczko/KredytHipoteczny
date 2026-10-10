@@ -337,30 +337,13 @@ function App() {
     handleSaveCurrentCalculation()
   }
 
-  const handleSaveCurrentCalculation = async () => {
+  const saveNewCalculation = async () => {
     if (!supabase || !isSupabaseConfigured || !currentUserId) {
       setAuthMessage({ type: 'error', text: 'Zaloguj się, aby zapisać kalkulację.' })
       return
     }
 
     const name = savedCalculationName.trim() || `Kalkulacja ${new Date().toLocaleDateString('pl-PL')}`
-
-    if (selectedSavedCalculationId) {
-      const { error } = await supabase
-        .from('saved_calculations')
-        .update({ name, payload: form })
-        .eq('id', selectedSavedCalculationId)
-
-      if (error) {
-        setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
-        return
-      }
-
-      setLastSavedForm(form)
-      setAuthMessage({ type: 'success', text: 'Zapisano zmiany.' })
-      await loadSavedCalculations(currentUserId)
-      return
-    }
 
     const { data, error } = await supabase
       .from('saved_calculations')
@@ -383,6 +366,34 @@ function App() {
     setSelectedSavedCalculationId(data?.id ?? null)
     setLastSavedForm(form)
     setAuthMessage({ type: 'success', text: 'Kalkulacja została zapisana.' })
+    await loadSavedCalculations(currentUserId)
+  }
+
+  const handleSaveCurrentCalculation = async () => {
+    if (!supabase || !isSupabaseConfigured || !currentUserId) {
+      setAuthMessage({ type: 'error', text: 'Zaloguj się, aby zapisać kalkulację.' })
+      return
+    }
+
+    if (!selectedSavedCalculationId) {
+      await saveNewCalculation()
+      return
+    }
+
+    const name = savedCalculationName.trim() || `Kalkulacja ${new Date().toLocaleDateString('pl-PL')}`
+
+    const { error } = await supabase
+      .from('saved_calculations')
+      .update({ name, payload: form })
+      .eq('id', selectedSavedCalculationId)
+
+    if (error) {
+      setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+      return
+    }
+
+    setLastSavedForm(form)
+    setAuthMessage({ type: 'success', text: 'Zapisano zmiany.' })
     await loadSavedCalculations(currentUserId)
   }
 
@@ -704,20 +715,11 @@ function App() {
               <button
                 type="button"
                 className="primary-button"
-                onClick={handleSaveCurrentCalculation}
-                disabled={selectedSavedCalculationId ? isSaveDisabled : false}
+                onClick={saveNewCalculation}
+                disabled={false}
               >
-                {selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz nową kalkulację'}
+                Zapisz nową kalkulację
               </button>
-              {selectedSavedCalculationId ? (
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={startNewSavedCalculationDraft}
-                >
-                  Nowy zapis
-                </button>
-              ) : null}
             </div>
 
             {savedCalculations.length === 0 ? (
