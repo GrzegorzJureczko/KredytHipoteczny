@@ -18,6 +18,13 @@ describe('normalizeSavedCalculationPayload', () => {
       notary: 2500,
       appraisal: 1600,
       commission: 0,
+      propertyValue: 300000,
+      lifeInsuranceMonthlyPremium: 2000,
+      lifeInsuranceMonths: 12,
+      lifeInsuranceDurationUnit: 'months',
+      propertyInsuranceFrequency: 'monthly',
+      propertyInsuranceBasis: 'propertyValue',
+      propertyInsuranceRatePercent: 0.05,
     }
 
     expect(normalizeSavedCalculationPayload(payload)).toEqual(payload)
@@ -43,6 +50,13 @@ describe('normalizeSavedCalculationPayload', () => {
       notary: '3000',
       appraisal: '1200',
       commission: '0',
+      propertyValue: '350000',
+      lifeInsuranceMonthlyPremium: '250',
+      lifeInsuranceMonths: '24',
+      lifeInsuranceDurationUnit: 'years',
+      propertyInsuranceFrequency: 'annual',
+      propertyInsuranceBasis: 'loanAmount',
+      propertyInsuranceRatePercent: '0.04',
     })
 
     expect(payload).not.toBeNull()

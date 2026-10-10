@@ -13,6 +13,13 @@ export type SavedCalculationPayload = {
   notary: number
   appraisal: number
   commission: number
+  propertyValue: number
+  lifeInsuranceMonthlyPremium: number
+  lifeInsuranceMonths: number
+  lifeInsuranceDurationUnit: 'months' | 'years'
+  propertyInsuranceFrequency: 'monthly' | 'annual'
+  propertyInsuranceBasis: 'propertyValue' | 'loanAmount'
+  propertyInsuranceRatePercent: number
 }
 
 export const normalizeSavedCalculationPayload = (
@@ -34,7 +41,6 @@ export const normalizeSavedCalculationPayload = (
     'extraPaymentMode',
     'extraPayments',
     'applicationFee',
-    'insurance',
     'notary',
     'appraisal',
     'commission',
@@ -72,10 +78,20 @@ export const normalizeSavedCalculationPayload = (
         }))
       : [],
     applicationFee: Number(record.applicationFee),
-    insurance: Number(record.insurance),
+    insurance: Number(record.insurance ?? 0),
     notary: Number(record.notary),
     appraisal: Number(record.appraisal),
     commission: Number(record.commission),
+    propertyValue: Number(record.propertyValue ?? record.amount ?? 0),
+    lifeInsuranceMonthlyPremium: Number(record.lifeInsuranceMonthlyPremium ?? record.insurance ?? 0),
+    lifeInsuranceMonths: Number(record.lifeInsuranceMonths ?? 0),
+    lifeInsuranceDurationUnit:
+      record.lifeInsuranceDurationUnit === 'years' ? 'years' : 'months',
+    propertyInsuranceFrequency:
+      record.propertyInsuranceFrequency === 'annual' ? 'annual' : 'monthly',
+    propertyInsuranceBasis:
+      record.propertyInsuranceBasis === 'loanAmount' ? 'loanAmount' : 'propertyValue',
+    propertyInsuranceRatePercent: Number(record.propertyInsuranceRatePercent ?? 0),
   }
 
   return payload

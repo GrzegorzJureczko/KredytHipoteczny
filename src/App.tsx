@@ -40,6 +40,13 @@ type FormState = {
   notary: number
   appraisal: number
   commission: number
+  propertyValue: number
+  lifeInsuranceMonthlyPremium: number
+  lifeInsuranceMonths: number
+  lifeInsuranceDurationUnit: 'months' | 'years'
+  propertyInsuranceFrequency: 'monthly' | 'annual'
+  propertyInsuranceBasis: 'propertyValue' | 'loanAmount'
+  propertyInsuranceRatePercent: number
 }
 
 const getNextMonthDate = () => {
@@ -67,10 +74,17 @@ const initialForm: FormState = {
   extraPaymentMode: 'reduceTerm',
   extraPayments: [],
   applicationFee: 1500,
-  insurance: 4200,
+  insurance: 200,
   notary: 3500,
   appraisal: 1800,
   commission: 0,
+  propertyValue: 400000,
+  lifeInsuranceMonthlyPremium: 200,
+  lifeInsuranceMonths: 24,
+  lifeInsuranceDurationUnit: 'months',
+  propertyInsuranceFrequency: 'monthly',
+  propertyInsuranceBasis: 'propertyValue',
+  propertyInsuranceRatePercent: 0.05,
 }
 
 const formatCurrency = (value: number) =>
@@ -179,14 +193,16 @@ function App() {
   }
 
   useEffect(() => {
-    if (!supabase) {
+    const client = supabase
+
+    if (!client || !isSupabaseConfigured) {
       return
     }
 
     const syncSession = async () => {
       const {
         data: { session },
-      } = await supabase.auth.getSession()
+      } = await client.auth.getSession()
       const user = session?.user
       setCurrentUserEmail(user?.email ?? null)
       setCurrentUserId(user?.id ?? null)
@@ -202,7 +218,7 @@ function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = client.auth.onAuthStateChange(async (_event, session) => {
       const user = session?.user
       setCurrentUserEmail(user?.email ?? null)
       setCurrentUserId(user?.id ?? null)
@@ -321,13 +337,6 @@ function App() {
   const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(lastSavedForm)
   const isSaveButtonInactive = selectedSavedCalculationId ? !hasUnsavedChanges : true
 
-  const startNewSavedCalculationDraft = () => {
-    setSelectedSavedCalculationId(null)
-    setSavedCalculationName('')
-    setLastSavedForm(form)
-    setSavedCalculationsExpanded(true)
-  }
-
   const handleSaveCurrentCalculationClick = () => {
     if (isSaveButtonInactive) {
       if (!selectedSavedCalculationId && !savedCalculationsExpanded) {
@@ -436,12 +445,42 @@ function App() {
     await loadSavedCalculations(currentUserId)
   }
 
-  const additionalCosts =
-    form.applicationFee +
-    form.insurance +
-    form.notary +
-    form.appraisal +
-    form.commission
+  const getLifeInsuranceMonths = (currentForm: FormState) => {
+    const months = currentForm.lifeInsuranceMonths || 0
+    const units = currentForm.lifeInsuranceDurationUnit || 'months'
+    return units === 'years' ? months * 12 : months
+  }
+
+  const getPropertyInsuranceMonthlyPremium = (currentForm: FormState) => {
+    const propertyBase =
+      currentForm.propertyInsuranceBasis === 'loanAmount' ? currentForm.amount : currentForm.propertyValue
+    const rateDecimal = (Number(currentForm.propertyInsuranceRatePercent) || 0) / 100
+    const annualPremium = Math.max(0, propertyBase * rateDecimal)
+
+    return currentForm.propertyInsuranceFrequency === 'annual'
+      ? annualPremium / 12
+      : annualPremium
+  }
+
+  const getMonthlyAdditionalCost = (monthNumber: number, currentForm: FormState) => {
+    const firstMonthFee =
+      currentForm.applicationFee +
+      currentForm.notary +
+      currentForm.appraisal +
+      currentForm.commission
+
+    const lifeInsurancePeriod = getLifeInsuranceMonths(currentForm)
+    const lifeInsuranceCost =
+      monthNumber <= lifeInsurancePeriod ? Number(currentForm.lifeInsuranceMonthlyPremium || 0) : 0
+
+    const propertyInsuranceCost = getPropertyInsuranceMonthlyPremium(currentForm)
+
+    return monthNumber === 1 ? firstMonthFee + lifeInsuranceCost + propertyInsuranceCost : lifeInsuranceCost + propertyInsuranceCost
+  }
+
+  const totalAdditionalCosts = Array.from({ length: form.years * 12 }, (_, index) =>
+    getMonthlyAdditionalCost(index + 1, form),
+  ).reduce((sum, value) => sum + value, 0)
 
   const loanStartDate = useMemo(() => {
     const date = new Date()
@@ -471,8 +510,8 @@ function App() {
     [form, loanStartDate],
   )
 
-  const totalCost = summary.totalPaid + additionalCosts
-  const monthlyBurden = summary.monthlyPayment + additionalCosts / Math.max(form.years * 12, 1)
+  const totalCost = summary.totalPaid + totalAdditionalCosts
+  const monthlyBurden = summary.monthlyPayment + totalAdditionalCosts / Math.max(form.years * 12, 1)
 
   const resetForm = () => setForm(initialForm)
 
@@ -554,6 +593,7 @@ function App() {
       paymentDate,
       monthLabel: `${monthNames[paymentDate.getMonth()]} ${paymentDate.getFullYear()}`,
       year: paymentDate.getFullYear(),
+      additionalCosts: getMonthlyAdditionalCost(index + 1, form),
     }
   })
 
@@ -592,7 +632,7 @@ function App() {
                   type="button"
                   className="save-disk-button"
                   onClick={handleSaveCurrentCalculationClick}
-                  aria-disabled={String(isSaveButtonInactive)}
+                  aria-disabled={isSaveButtonInactive}
                   title={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
                   aria-label={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
                 >
@@ -991,7 +1031,7 @@ function App() {
             <h3>Koszty około-kredytowe</h3>
             <div className="field-grid compact">
               <label>
-                <span>Opłata za wniosek</span>
+                <span>Prowizja</span>
                 <input
                   type="number"
                   min="0"
@@ -1001,13 +1041,87 @@ function App() {
               </label>
 
               <label>
-                <span>Ubezpieczenie</span>
+                <span>Ubezpieczenie na życie</span>
                 <input
                   type="number"
                   min="0"
-                  value={form.insurance}
-                  onChange={(event) => updateField('insurance', Number(event.target.value))}
+                  value={form.lifeInsuranceMonthlyPremium}
+                  onChange={(event) =>
+                    updateField('lifeInsuranceMonthlyPremium', Number(event.target.value))
+                  }
                 />
+              </label>
+
+              <label>
+                <span>Czas ubezpieczenia na życie</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.lifeInsuranceMonths}
+                  onChange={(event) => updateField('lifeInsuranceMonths', Number(event.target.value))}
+                />
+              </label>
+
+              <label>
+                <span>Jednostka czasu</span>
+                <select
+                  value={form.lifeInsuranceDurationUnit}
+                  onChange={(event) =>
+                    updateField('lifeInsuranceDurationUnit', event.target.value as 'months' | 'years')
+                  }
+                >
+                  <option value="months">Miesiące</option>
+                  <option value="years">Lata</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Wartość nieruchomości</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.propertyValue}
+                  onChange={(event) => updateField('propertyValue', Number(event.target.value))}
+                />
+              </label>
+
+              <label>
+                <span>Stawka ubezpieczenia</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.propertyInsuranceRatePercent}
+                  onChange={(event) =>
+                    updateField('propertyInsuranceRatePercent', Number(event.target.value))
+                  }
+                />
+              </label>
+
+              <label>
+                <span>Częstotliwość składki</span>
+                <select
+                  value={form.propertyInsuranceFrequency}
+                  onChange={(event) =>
+                    updateField('propertyInsuranceFrequency', event.target.value as 'monthly' | 'annual')
+                  }
+                >
+                  <option value="monthly">Miesięcznie</option>
+                  <option value="annual">Rocznie</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Podstawa kalkulacji</span>
+                <select
+                  value={form.propertyInsuranceBasis}
+                  onChange={(event) =>
+                    updateField('propertyInsuranceBasis', event.target.value as 'propertyValue' | 'loanAmount')
+                  }
+                >
+                  <option value="propertyValue">Wartość nieruchomości</option>
+                  <option value="loanAmount">Kwota kredytu</option>
+                </select>
               </label>
 
               <label>
@@ -1068,7 +1182,7 @@ function App() {
           <div className="kpi-row">
             <div>
               <small>Koszty dodatkowe</small>
-              <strong>{formatCurrency(additionalCosts)}</strong>
+              <strong>{formatCurrency(totalAdditionalCosts)}</strong>
             </div>
             <div>
               <small>Skumulowana spłata</small>
@@ -1113,6 +1227,7 @@ function App() {
                 <th>Kapitał</th>
                 <th>Odsetki</th>
                 <th>Nadpłata</th>
+                <th>Koszty dodatkowe</th>
                 <th>Saldo</th>
               </tr>
             </thead>
@@ -1126,12 +1241,13 @@ function App() {
               <div className="table-wrap">
                 <table>
                   <colgroup>
+                    <col style={{ width: '14%' }} />
                     <col style={{ width: '18%' }} />
-                    <col style={{ width: '20%' }} />
-                    <col style={{ width: '18%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '14%' }} />
                     <col style={{ width: '16%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '10%' }} />
                   </colgroup>
                   <tbody>
                     {rows.map((row) => (
@@ -1141,6 +1257,7 @@ function App() {
                         <td>{formatCurrency(row.principal)}</td>
                         <td>{formatCurrency(row.interest)}</td>
                         <td>{formatCurrency(row.extraPayment)}</td>
+                        <td>{formatCurrency(row.additionalCosts)}</td>
                         <td>{formatCurrency(row.remainingBalance)}</td>
                       </tr>
                     ))}
