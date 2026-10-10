@@ -918,6 +918,7 @@ function App() {
               <input
                 type="number"
                 min="0"
+                step="5000"
                 value={form.amount}
                 onChange={(event) => updateField('amount', Number(event.target.value))}
               />
@@ -928,6 +929,7 @@ function App() {
               <input
                 type="number"
                 min="0"
+                step="5000"
                 value={form.propertyValue}
                 onChange={(event) => updateField('propertyValue', Number(event.target.value))}
               />
@@ -989,6 +991,7 @@ function App() {
                 <input
                   type="number"
                   min="0"
+                  step="100"
                   value={form.applicationFee}
                   onChange={(event) => updateField('applicationFee', Number(event.target.value))}
                 />
@@ -999,6 +1002,7 @@ function App() {
                 <input
                   type="number"
                   min="0"
+                  step="100"
                   value={form.notary}
                   onChange={(event) => updateField('notary', Number(event.target.value))}
                 />
@@ -1009,6 +1013,7 @@ function App() {
                 <input
                   type="number"
                   min="0"
+                  step="100"
                   value={form.appraisal}
                   onChange={(event) => updateField('appraisal', Number(event.target.value))}
                 />
@@ -1019,6 +1024,7 @@ function App() {
                 <input
                   type="number"
                   min="0"
+                  step="100"
                   value={form.commission}
                   onChange={(event) => updateField('commission', Number(event.target.value))}
                 />
@@ -1033,6 +1039,7 @@ function App() {
                   <input
                     type="number"
                     min="0"
+                    step="10"
                     value={form.lifeInsuranceMonthlyPremium}
                     onChange={(event) =>
                       updateField('lifeInsuranceMonthlyPremium', Number(event.target.value))
@@ -1045,6 +1052,7 @@ function App() {
                   <input
                     type="number"
                     min="0"
+                    step="1"
                     value={form.lifeInsuranceMonths}
                     onChange={(event) => updateField('lifeInsuranceMonths', Number(event.target.value))}
                   />
@@ -1168,6 +1176,7 @@ function App() {
                 <input
                   type="number"
                   min="0"
+                  step="100"
                   value={form.extraMonthlyPayment}
                   onChange={(event) =>
                     updateField('extraMonthlyPayment', Number(event.target.value))
@@ -1221,6 +1230,7 @@ function App() {
                       <input
                         type="number"
                         min="0"
+                        step="100"
                         value={payment.amount}
                         onChange={(event) =>
                           updateExtraPayment(payment.id, 'amount', Number(event.target.value))
