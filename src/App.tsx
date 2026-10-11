@@ -538,7 +538,7 @@ function App() {
   const getLifeInsuranceMonths = (currentForm: FormState) => {
     const months = currentForm.lifeInsuranceMonths || 0
     const units = currentForm.lifeInsuranceDurationUnit || 'months'
-    return units === 'years' ? months * 12 : months
+    return units === 'years' ? Math.round(months * 12) : months
   }
 
   const getPropertyInsuranceMonthlyPremium = (currentForm: FormState) => {
@@ -699,6 +699,23 @@ function App() {
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  const changeLifeInsuranceUnit = (unit: FormState['lifeInsuranceDurationUnit']) => {
+    setForm((current) => {
+      if (current.lifeInsuranceDurationUnit === unit) {
+        return current
+      }
+
+      const value = current.lifeInsuranceMonths || 0
+      const converted = unit === 'years' ? value / 12 : value * 12
+
+      return {
+        ...current,
+        lifeInsuranceDurationUnit: unit,
+        lifeInsuranceMonths: Math.round(converted * 100) / 100,
+      }
+    })
   }
 
   return (
@@ -1049,26 +1066,28 @@ function App() {
 
                 <label>
                   <span>Czas ubezpieczenia</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.lifeInsuranceMonths}
-                    onChange={(event) => updateField('lifeInsuranceMonths', Number(event.target.value))}
-                  />
-                </label>
-
-                <label className="full-width">
-                  <span>Jednostka czasu</span>
-                  <select
-                    value={form.lifeInsuranceDurationUnit}
-                    onChange={(event) =>
-                      updateField('lifeInsuranceDurationUnit', event.target.value as 'months' | 'years')
-                    }
-                  >
-                    <option value="months">Miesiące</option>
-                    <option value="years">Lata</option>
-                  </select>
+                  <div className="input-with-unit">
+                    <input
+                      type="number"
+                      aria-label="Czas ubezpieczenia"
+                      min="0"
+                      step={form.lifeInsuranceDurationUnit === 'years' ? '0.5' : '1'}
+                      value={form.lifeInsuranceMonths}
+                      onChange={(event) => updateField('lifeInsuranceMonths', Number(event.target.value))}
+                    />
+                    <div className="unit-toggle" role="group" aria-label="Jednostka czasu">
+                      {(['months', 'years'] as const).map((unit) => (
+                        <button
+                          key={unit}
+                          type="button"
+                          aria-pressed={form.lifeInsuranceDurationUnit === unit}
+                          onClick={() => changeLifeInsuranceUnit(unit)}
+                        >
+                          {unit === 'months' ? 'Miesiące' : 'Lata'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </label>
               </div>
             </div>

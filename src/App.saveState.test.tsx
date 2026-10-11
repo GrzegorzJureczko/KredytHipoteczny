@@ -90,6 +90,30 @@ beforeEach(() => {
 })
 
 describe('save button behavior', () => {
+  it('converts the life insurance duration when the unit changes', () => {
+    const { unmount } = render(<App />)
+
+    const duration = screen.getByRole('spinbutton', { name: 'Czas ubezpieczenia' }) as HTMLInputElement
+    const years = screen.getByRole('button', { name: 'Lata' })
+    const months = screen.getByRole('button', { name: 'Miesiące' })
+
+    expect(duration.value).toBe('24')
+    expect(months.getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(years)
+    expect(duration.value).toBe('2')
+    expect(years.getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(months)
+    expect(duration.value).toBe('24')
+
+    fireEvent.change(duration, { target: { value: '18' } })
+    fireEvent.click(years)
+    expect(duration.value).toBe('1.5')
+
+    unmount()
+  })
+
   it('allows expanding and collapsing additional calculation sections', async () => {
     render(<App />)
 

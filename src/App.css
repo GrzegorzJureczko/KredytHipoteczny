@@ -358,6 +358,45 @@ label {
   padding-right: 8px;
 }
 
+.input-with-unit {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.input-with-unit input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.unit-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.unit-toggle button {
+  padding: 0 12px;
+  border: none;
+  background: rgba(15, 23, 42, 0.85);
+  color: #94a3b8;
+  font: inherit;
+  cursor: pointer;
+}
+
+.unit-toggle button[aria-pressed='true'] {
+  background: rgba(59, 130, 246, 0.35);
+  color: #eff6ff;
+  font-weight: 700;
+}
+
+.unit-toggle button:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.7);
+  outline-offset: -2px;
+}
+
 .field-tooltip-trigger {
   position: relative;
   display: inline-grid;
