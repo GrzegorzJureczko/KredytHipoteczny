@@ -107,9 +107,12 @@ describe('save button behavior', () => {
     fireEvent.click(months)
     expect(duration.value).toBe('24')
 
-    fireEvent.change(duration, { target: { value: '18' } })
+    fireEvent.change(duration, { target: { value: '13' } })
     fireEvent.click(years)
-    expect(duration.value).toBe('1.5')
+    expect(duration.value).toBe('1')
+
+    fireEvent.click(months)
+    expect(duration.value).toBe('12')
 
     unmount()
   })

@@ -707,13 +707,16 @@ function App() {
         return current
       }
 
-      const value = current.lifeInsuranceMonths || 0
-      const converted = unit === 'years' ? value / 12 : value * 12
+      const value = Number(current.lifeInsuranceMonths) || 0
+      const converted =
+        unit === 'years'
+          ? Math.floor(value / 12)
+          : Math.floor(value * 12)
 
       return {
         ...current,
         lifeInsuranceDurationUnit: unit,
-        lifeInsuranceMonths: Math.round(converted * 100) / 100,
+        lifeInsuranceMonths: converted,
       }
     })
   }
@@ -1071,7 +1074,7 @@ function App() {
                       type="number"
                       aria-label="Czas ubezpieczenia"
                       min="0"
-                      step={form.lifeInsuranceDurationUnit === 'years' ? '0.5' : '1'}
+                      step={form.lifeInsuranceDurationUnit === 'years' ? '1' : '1'}
                       value={form.lifeInsuranceMonths}
                       onChange={(event) => updateField('lifeInsuranceMonths', Number(event.target.value))}
                     />
