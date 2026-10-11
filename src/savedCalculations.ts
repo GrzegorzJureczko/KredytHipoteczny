@@ -1,6 +1,8 @@
 export type SavedCalculationPayload = {
   amount: number
   rate: number
+  wibor?: number
+  margin?: number
   years: number
   repaymentType: 'annuity' | 'decreasing'
   rateChanges: Array<{ id: number; date: string; rate: number }>
@@ -50,9 +52,10 @@ export const normalizeSavedCalculationPayload = (
     return null
   }
 
+  const annualRate = Number(record.rate ?? 0)
   const payload: SavedCalculationPayload = {
     amount: Number(record.amount),
-    rate: Number(record.rate),
+    rate: annualRate,
     years: Number(record.years),
     repaymentType: record.repaymentType === 'decreasing' ? 'decreasing' : 'annuity',
     rateChanges: Array.isArray(record.rateChanges)
@@ -92,6 +95,11 @@ export const normalizeSavedCalculationPayload = (
     propertyInsuranceBasis:
       record.propertyInsuranceBasis === 'loanAmount' ? 'loanAmount' : 'propertyValue',
     propertyInsuranceRatePercent: Number(record.propertyInsuranceRatePercent ?? 0),
+  }
+
+  if ('wibor' in record || 'margin' in record) {
+    payload.wibor = Number(record.wibor ?? annualRate)
+    payload.margin = Number(record.margin ?? 0)
   }
 
   return payload

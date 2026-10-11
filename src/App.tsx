@@ -28,6 +28,8 @@ type RateChangeEntry = {
 type FormState = {
   amount: number
   rate: number
+  wibor: number
+  margin: number
   years: number
   repaymentType: RepaymentType
   rateChanges: RateChangeEntry[]
@@ -78,9 +80,14 @@ const getDateOffsetMonths = (offsetMonths: number) => {
   return toLocalDateString(date)
 }
 
+const getAnnualRateFromSplit = (wibor: number, margin: number) =>
+  Number((Number(wibor || 0) + Number(margin || 0)).toFixed(4))
+
 const initialForm: FormState = {
   amount: 350000,
   rate: 5.2,
+  wibor: 2.7,
+  margin: 2.5,
   years: 30,
   repaymentType: 'annuity',
   rateChanges: [],
@@ -504,15 +511,22 @@ function App() {
   }
 
   const handleLoadSavedCalculation = async (entry: SavedCalculationEntry) => {
-    const loadedSnapshot = JSON.parse(JSON.stringify(entry.payload)) as FormState
-
-    setForm({
+    const loadedSnapshot = JSON.parse(JSON.stringify(entry.payload)) as Partial<FormState>
+    const wibor = Number((loadedSnapshot as Record<string, unknown>).wibor ?? loadedSnapshot.rate ?? 0)
+    const margin = Number((loadedSnapshot as Record<string, unknown>).margin ?? 0)
+    const normalizedRate = getAnnualRateFromSplit(wibor, margin)
+    const normalizedForm: FormState = {
       ...initialForm,
       ...loadedSnapshot,
-      rateChanges: loadedSnapshot.rateChanges,
-      extraPayments: loadedSnapshot.extraPayments,
-    })
-    setLastSavedForm(loadedSnapshot)
+      rate: normalizedRate,
+      wibor,
+      margin,
+      rateChanges: loadedSnapshot.rateChanges ?? [],
+      extraPayments: loadedSnapshot.extraPayments ?? [],
+    }
+
+    setForm(normalizedForm)
+    setLastSavedForm(normalizedForm)
     setSavedCalculationName(entry.name)
     setSelectedSavedCalculationId(entry.id)
     setAuthMessage({ type: 'success', text: `Wczytano zapis: ${entry.name}.` })
@@ -698,7 +712,17 @@ function App() {
   )
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((current) => ({ ...current, [key]: value }))
+    setForm((current) => {
+      const next = { ...current, [key]: value }
+
+      if (key === 'wibor' || key === 'margin') {
+        const wibor = key === 'wibor' ? Number(value) || 0 : current.wibor
+        const margin = key === 'margin' ? Number(value) || 0 : current.margin
+        return { ...next, rate: getAnnualRateFromSplit(wibor, margin) }
+      }
+
+      return next
+    })
   }
 
   const changeLifeInsuranceUnit = (unit: FormState['lifeInsuranceDurationUnit']) => {
@@ -955,52 +979,85 @@ function App() {
               />
             </label>
 
-            <label>
-              <span className="field-title">
-                Oprocentowanie
-                <FieldTooltip id="loan-rate-help" text="Roczna stopa procentowa kredytu" />
-              </span>
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={form.rate}
-                onChange={(event) => updateField('rate', Number(event.target.value))}
-              />
-            </label>
+            <div className="field-grid interest-rate-row full-width">
+              <label>
+                <span className="field-title">
+                  WIBOR
+                  <FieldTooltip id="loan-rate-help" text="Roczna stopa procentowa WIBOR" />
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={form.wibor}
+                  onChange={(event) => updateField('wibor', Number(event.target.value))}
+                />
+              </label>
 
-            <label>
-              <span className="field-title">
-                Okres kredytowania
-                <FieldTooltip id="loan-term-help" text="Na ile lat rozciągasz spłatę" />
-              </span>
-              <select
-                value={form.years}
-                onChange={(event) => updateField('years', Number(event.target.value))}
-              >
-                {[5, 10, 15, 20, 25, 30, 35, 40].map((year) => (
-                  <option key={year} value={year}>
-                    {year} lat
-                  </option>
-                ))}
-              </select>
-            </label>
+              <label>
+                <span className="field-title">
+                  Marża
+                  <FieldTooltip id="loan-margin-help" text="Marża banku dodawana do WIBOR-u" />
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={form.margin}
+                  onChange={(event) => updateField('margin', Number(event.target.value))}
+                />
+              </label>
 
-            <label>
-              <span className="field-title">
-                Rodzaj raty
-                <FieldTooltip id="repayment-type-help" text="Wybierz wariant składanych płatności" />
-              </span>
-              <select
-                value={form.repaymentType}
-                onChange={(event) =>
-                  updateField('repaymentType', event.target.value as RepaymentType)
-                }
-              >
-                <option value="annuity">Równe</option>
-                <option value="decreasing">Malejące</option>
-              </select>
-            </label>
+              <label>
+                <span className="field-title">
+                  Oprocentowanie
+                  <FieldTooltip id="loan-rate-total-help" text="Suma WIBOR-u i marży" />
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={form.rate}
+                  readOnly
+                  aria-readonly="true"
+                />
+              </label>
+            </div>
+
+            <div className="field-grid compact full-width">
+              <label>
+                <span className="field-title">
+                  Okres kredytowania
+                  <FieldTooltip id="loan-term-help" text="Na ile lat rozciągasz spłatę" />
+                </span>
+                <select
+                  value={form.years}
+                  onChange={(event) => updateField('years', Number(event.target.value))}
+                >
+                  {[5, 10, 15, 20, 25, 30, 35, 40].map((year) => (
+                    <option key={year} value={year}>
+                      {year} lat
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span className="field-title">
+                  Rodzaj raty
+                  <FieldTooltip id="repayment-type-help" text="Wybierz wariant składanych płatności" />
+                </span>
+                <select
+                  value={form.repaymentType}
+                  onChange={(event) =>
+                    updateField('repaymentType', event.target.value as RepaymentType)
+                  }
+                >
+                  <option value="annuity">Równe</option>
+                  <option value="decreasing">Malejące</option>
+                </select>
+              </label>
+            </div>
           </div>
 
           <details className="subsection collapsible-section">

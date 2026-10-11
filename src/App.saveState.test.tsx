@@ -90,12 +90,31 @@ beforeEach(() => {
 })
 
 describe('save button behavior', () => {
+  it('derives the total interest rate from WIBOR and margin', () => {
+    render(<App />)
+
+    const getInputByLabel = (labelText: string) =>
+      Array.from(document.querySelectorAll('label')).find((label) =>
+        label.textContent?.includes(labelText),
+      )?.querySelector('input') as HTMLInputElement
+
+    const wibor = getInputByLabel('WIBOR')
+    const margin = getInputByLabel('Marża')
+    const total = getInputByLabel('Oprocentowanie')
+
+    fireEvent.change(wibor, { target: { value: '3.2' } })
+    fireEvent.change(margin, { target: { value: '2.1' } })
+
+    expect(total.value).toBe('5.3')
+    expect(total.readOnly).toBe(true)
+  })
+
   it('converts the life insurance duration when the unit changes', () => {
     const { unmount } = render(<App />)
 
-    const duration = screen.getByRole('spinbutton', { name: 'Czas ubezpieczenia' }) as HTMLInputElement
-    const years = screen.getByRole('button', { name: 'Lata' })
-    const months = screen.getByRole('button', { name: 'Miesiące' })
+    const duration = screen.getAllByRole('spinbutton', { name: 'Czas ubezpieczenia' })[0] as HTMLInputElement
+    const years = screen.getAllByRole('button', { name: 'Lata' })[0]
+    const months = screen.getAllByRole('button', { name: 'Miesiące' })[0]
 
     expect(duration.value).toBe('24')
     expect(months.getAttribute('aria-pressed')).toBe('true')
@@ -121,7 +140,9 @@ describe('save button behavior', () => {
     render(<App />)
 
     for (const title of ['Koszty około-kredytowe', 'Zmiany oprocentowania', 'Nadpłaty']) {
-      const sectionTitle = screen.getByText(title)
+      const sectionTitle = screen
+        .getAllByText(title)
+        .find((element) => element.closest('details')) ?? screen.getAllByText(title)[0]
       const section = sectionTitle.closest('details')
 
       expect(section).not.toBeNull()
