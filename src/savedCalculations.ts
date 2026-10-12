@@ -23,6 +23,8 @@ export type SavedCalculationPayload = {
   propertyInsuranceFrequency: 'monthly' | 'annual'
   propertyInsuranceBasis: 'propertyValue' | 'loanAmount'
   propertyInsuranceRatePercent: number
+  propertyInsuranceCalculationType?: 'percentage' | 'amount'
+  propertyInsuranceAmount?: number
 }
 
 export const normalizeSavedCalculationPayload = (
@@ -100,6 +102,15 @@ export const normalizeSavedCalculationPayload = (
 
   if ('loanStartDate' in record) {
     payload.loanStartDate = String(record.loanStartDate ?? '')
+  }
+
+  if ('propertyInsuranceCalculationType' in record) {
+    payload.propertyInsuranceCalculationType =
+      record.propertyInsuranceCalculationType === 'amount' ? 'amount' : 'percentage'
+  }
+
+  if ('propertyInsuranceAmount' in record) {
+    payload.propertyInsuranceAmount = Number(record.propertyInsuranceAmount ?? 0)
   }
 
   if ('wibor' in record || 'margin' in record) {

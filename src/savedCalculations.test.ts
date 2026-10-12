@@ -57,11 +57,15 @@ describe('normalizeSavedCalculationPayload', () => {
       propertyInsuranceFrequency: 'annual',
       propertyInsuranceBasis: 'loanAmount',
       propertyInsuranceRatePercent: '0.04',
+      propertyInsuranceCalculationType: 'amount',
+      propertyInsuranceAmount: '250',
     })
 
     expect(payload).not.toBeNull()
     expect(payload?.repaymentType).toBe('annuity')
     expect(payload?.extraPaymentMode).toBe('reduceTerm')
+    expect(payload?.propertyInsuranceCalculationType).toBe('amount')
+    expect(payload?.propertyInsuranceAmount).toBe(250)
     expect(payload?.rateChanges[0]).toEqual({ id: 1, date: '2028-01-01', rate: 5.2 })
     expect(payload?.extraPayments[0]).toEqual({
       id: 9,

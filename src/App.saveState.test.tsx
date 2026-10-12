@@ -348,3 +348,79 @@ describe('registration flow', () => {
     })
   })
 })
+
+describe('property insurance calculation modes', () => {
+  it('renders percentage mode by default with rate, readonly sum, frequency, and basis', () => {
+    const { container, unmount } = render(<App />)
+    const view = within(container)
+
+    const calculationTypeSelect = view.getByRole('combobox', { name: 'Sposób naliczania' }) as HTMLSelectElement
+    expect(calculationTypeSelect.value).toBe('percentage')
+
+    const rateInput = view.getByLabelText('Stawka ubezpieczenia') as HTMLInputElement
+    const sumInput = view.getByLabelText('Suma ubezpieczenia') as HTMLInputElement
+    const frequencySelect = view.getByLabelText('Częstotliwość składki') as HTMLSelectElement
+    const basisSelect = view.getByLabelText('Podstawa kalkulacji') as HTMLSelectElement
+
+    expect(rateInput).toBeTruthy()
+    expect(sumInput).toBeTruthy()
+    expect(sumInput.readOnly).toBe(true)
+    // 400 000 * 0.05% = 200
+    expect(sumInput.value).toBe('200')
+    expect(frequencySelect).toBeTruthy()
+    expect(basisSelect).toBeTruthy()
+
+    // Changing the percentage rate updates the calculated sum
+    fireEvent.change(rateInput, { target: { value: '0.1' } })
+    expect(sumInput.value).toBe('400')
+
+    unmount()
+  })
+
+  it('switches to amount mode, hides rate and basis, and allows entering sum directly', () => {
+    const { container, unmount } = render(<App />)
+    const view = within(container)
+
+    const calculationTypeSelect = view.getByRole('combobox', { name: 'Sposób naliczania' })
+    fireEvent.change(calculationTypeSelect, { target: { value: 'amount' } })
+
+    expect(view.queryByLabelText('Stawka ubezpieczenia')).toBeNull()
+    expect(view.queryByLabelText('Podstawa kalkulacji')).toBeNull()
+
+    const sumInput = view.getByLabelText('Suma ubezpieczenia') as HTMLInputElement
+    const frequencySelect = view.getByLabelText('Częstotliwość składki') as HTMLSelectElement
+
+    expect(sumInput).toBeTruthy()
+    expect(sumInput.readOnly).toBe(false)
+    expect(frequencySelect).toBeTruthy()
+
+    // User can edit the sum in amount mode
+    fireEvent.change(sumInput, { target: { value: '350' } })
+    expect(sumInput.value).toBe('350')
+
+    unmount()
+  })
+
+  it('divides annual insurance amount by 12 in monthly schedule rows', () => {
+    const { container, unmount } = render(<App />)
+    const view = within(container)
+
+    const calculationTypeSelect = view.getByRole('combobox', { name: 'Sposób naliczania' })
+    fireEvent.change(calculationTypeSelect, { target: { value: 'amount' } })
+
+    const sumInput = view.getByLabelText('Suma ubezpieczenia') as HTMLInputElement
+    const frequencySelect = view.getByLabelText('Częstotliwość składki') as HTMLSelectElement
+
+    fireEvent.change(sumInput, { target: { value: '1200' } })
+    fireEvent.change(frequencySelect, { target: { value: 'annual' } })
+
+    // Month 2 additional costs: life insurance 200 + property insurance (1200 / 12 = 100) = 300 zł
+    const rows = container.querySelectorAll('.table-wrap tbody tr')
+    expect(rows.length).toBeGreaterThan(1)
+    // In row 2 (index 1), Koszty dodatkowe column (index 6) should show 300,00 zł
+    const cells = rows[1].querySelectorAll('td')
+    expect(cells[6].textContent).toContain('300,00')
+
+    unmount()
+  })
+})

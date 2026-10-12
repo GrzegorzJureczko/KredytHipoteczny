@@ -47,6 +47,8 @@ type FormState = {
   lifeInsuranceMonthlyPremium: number
   lifeInsuranceMonths: number
   lifeInsuranceDurationUnit: 'months' | 'years'
+  propertyInsuranceCalculationType: 'percentage' | 'amount'
+  propertyInsuranceAmount: number
   propertyInsuranceFrequency: 'monthly' | 'annual'
   propertyInsuranceBasis: 'propertyValue' | 'loanAmount'
   propertyInsuranceRatePercent: number
@@ -106,6 +108,8 @@ const initialForm: FormState = {
   lifeInsuranceMonthlyPremium: 200,
   lifeInsuranceMonths: 24,
   lifeInsuranceDurationUnit: 'months',
+  propertyInsuranceCalculationType: 'percentage',
+  propertyInsuranceAmount: 200,
   propertyInsuranceFrequency: 'monthly',
   propertyInsuranceBasis: 'propertyValue',
   propertyInsuranceRatePercent: 0.05,
@@ -558,6 +562,13 @@ function App() {
   }
 
   const getPropertyInsuranceMonthlyPremium = (currentForm: FormState) => {
+    if (currentForm.propertyInsuranceCalculationType === 'amount') {
+      const amount = Math.max(0, Number(currentForm.propertyInsuranceAmount) || 0)
+      return currentForm.propertyInsuranceFrequency === 'annual'
+        ? amount / 12
+        : amount
+    }
+
     const propertyBase =
       currentForm.propertyInsuranceBasis === 'loanAmount' ? currentForm.amount : currentForm.propertyValue
     const rateDecimal = (Number(currentForm.propertyInsuranceRatePercent) || 0) / 100
@@ -738,6 +749,24 @@ function App() {
         lifeInsuranceMonths: converted,
       }
     })
+  }
+
+  const handlePropertyInsuranceCalculationTypeChange = (
+    calculationType: 'percentage' | 'amount',
+  ) => {
+    setForm((current) => ({
+      ...current,
+      propertyInsuranceCalculationType: calculationType,
+      propertyInsuranceAmount:
+        calculationType === 'amount'
+          ? Number(
+              getPropertyInsuranceMonthlyPremium({
+                ...current,
+                propertyInsuranceCalculationType: 'percentage',
+              }).toFixed(2),
+            )
+          : current.propertyInsuranceAmount,
+    }))
   }
 
   return (
@@ -1161,44 +1190,103 @@ function App() {
             <div className="insurance-block">
               <h4>Ubezpieczenie nieruchomości</h4>
               <div className="field-grid compact">
-                <label>
-                  <span>Stawka ubezpieczenia</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.propertyInsuranceRatePercent}
-                    onChange={(event) =>
-                      updateField('propertyInsuranceRatePercent', Number(event.target.value))
-                    }
-                  />
-                </label>
-
-                <label>
-                  <span>Częstotliwość składki</span>
+                <label className="full-width">
+                  <span>Sposób naliczania</span>
                   <select
-                    value={form.propertyInsuranceFrequency}
+                    value={form.propertyInsuranceCalculationType}
                     onChange={(event) =>
-                      updateField('propertyInsuranceFrequency', event.target.value as 'monthly' | 'annual')
+                      handlePropertyInsuranceCalculationTypeChange(
+                        event.target.value as 'percentage' | 'amount',
+                      )
                     }
                   >
-                    <option value="monthly">Miesięcznie</option>
-                    <option value="annual">Rocznie</option>
+                    <option value="percentage">Procentowo</option>
+                    <option value="amount">Kwotowo</option>
                   </select>
                 </label>
 
-                <label>
-                  <span>Podstawa kalkulacji</span>
-                  <select
-                    value={form.propertyInsuranceBasis}
-                    onChange={(event) =>
-                      updateField('propertyInsuranceBasis', event.target.value as 'propertyValue' | 'loanAmount')
-                    }
-                  >
-                    <option value="propertyValue">Wartość nieruchomości</option>
-                    <option value="loanAmount">Kwota kredytu</option>
-                  </select>
-                </label>
+                {form.propertyInsuranceCalculationType === 'percentage' ? (
+                  <>
+                    <label>
+                      <span>Stawka ubezpieczenia</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.propertyInsuranceRatePercent}
+                        onChange={(event) =>
+                          updateField('propertyInsuranceRatePercent', Number(event.target.value))
+                        }
+                      />
+                    </label>
+
+                    <label>
+                      <span>Suma ubezpieczenia</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={Number(getPropertyInsuranceMonthlyPremium(form).toFixed(2))}
+                        readOnly
+                        aria-readonly="true"
+                      />
+                    </label>
+
+                    <label>
+                      <span>Częstotliwość składki</span>
+                      <select
+                        value={form.propertyInsuranceFrequency}
+                        onChange={(event) =>
+                          updateField('propertyInsuranceFrequency', event.target.value as 'monthly' | 'annual')
+                        }
+                      >
+                        <option value="monthly">Miesięcznie</option>
+                        <option value="annual">Rocznie</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      <span>Podstawa kalkulacji</span>
+                      <select
+                        value={form.propertyInsuranceBasis}
+                        onChange={(event) =>
+                          updateField('propertyInsuranceBasis', event.target.value as 'propertyValue' | 'loanAmount')
+                        }
+                      >
+                        <option value="propertyValue">Wartość nieruchomości</option>
+                        <option value="loanAmount">Kwota kredytu</option>
+                      </select>
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label>
+                      <span>Suma ubezpieczenia</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.propertyInsuranceAmount}
+                        onChange={(event) =>
+                          updateField('propertyInsuranceAmount', Number(event.target.value))
+                        }
+                      />
+                    </label>
+
+                    <label>
+                      <span>Częstotliwość składki</span>
+                      <select
+                        value={form.propertyInsuranceFrequency}
+                        onChange={(event) =>
+                          updateField('propertyInsuranceFrequency', event.target.value as 'monthly' | 'annual')
+                        }
+                      >
+                        <option value="monthly">Miesięcznie</option>
+                        <option value="annual">Rocznie</option>
+                      </select>
+                    </label>
+                  </>
+                )}
               </div>
             </div>
           </details>
