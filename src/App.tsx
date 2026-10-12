@@ -27,6 +27,7 @@ type RateChangeEntry = {
 
 type FormState = {
   amount: number
+  loanStartDate: string
   rate: number
   wibor: number
   margin: number
@@ -85,6 +86,7 @@ const getAnnualRateFromSplit = (wibor: number, margin: number) =>
 
 const initialForm: FormState = {
   amount: 350000,
+  loanStartDate: getNextMonthDate(),
   rate: 5.2,
   wibor: 2.7,
   margin: 2.5,
@@ -586,13 +588,6 @@ function App() {
     getMonthlyAdditionalCost(index + 1, form),
   ).reduce((sum, value) => sum + value, 0)
 
-  const loanStartDate = useMemo(() => {
-    const date = new Date()
-    date.setDate(1)
-    date.setMonth(date.getMonth() + 1)
-    return toLocalDateString(date)
-  }, [])
-
   const summary = useMemo(
     () =>
       calculateLoanSummary({
@@ -600,7 +595,7 @@ function App() {
         annualRate: form.rate,
         termMonths: form.years * 12,
         repaymentType: form.repaymentType,
-        loanStartDate,
+        loanStartDate: form.loanStartDate,
         rateChanges: form.rateChanges.map(({ date, rate }) => ({ date, rate })),
         extraMonthlyPayment: form.extraMonthlyPayment,
         extraMonthlyPaymentStartDate: form.extraMonthlyPaymentStartDate,
@@ -611,7 +606,7 @@ function App() {
         })),
         extraPaymentMode: form.extraPaymentMode,
       }),
-    [form, loanStartDate],
+    [form],
   )
 
   const totalCost = summary.totalPaid + totalAdditionalCosts
@@ -685,10 +680,10 @@ function App() {
   }
 
   const scheduleWithDates = summary.schedule.map((row, index) => {
-    const baseDate = new Date()
+    const { year: startYear, month: startMonth } = getMonthYearParts(form.loanStartDate)
     const paymentDate = new Date(
-      baseDate.getFullYear(),
-      baseDate.getMonth() + 1 + index,
+      startYear,
+      startMonth - 1 + index,
       1,
     )
 
@@ -976,6 +971,17 @@ function App() {
                 step="5000"
                 value={form.propertyValue}
                 onChange={(event) => updateField('propertyValue', Number(event.target.value))}
+              />
+            </label>
+
+            <label>
+              <span className="field-title">
+                Data startu kredytu
+                <FieldTooltip id="loan-start-help" text="Miesiąc i rok uruchomienia kredytu, od którego liczony jest harmonogram" />
+              </span>
+              <MonthYearInput
+                value={form.loanStartDate}
+                onChange={(value) => updateField('loanStartDate', value)}
               />
             </label>
 

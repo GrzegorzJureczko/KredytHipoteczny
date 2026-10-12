@@ -1,5 +1,6 @@
 export type SavedCalculationPayload = {
   amount: number
+  loanStartDate?: string
   rate: number
   wibor?: number
   margin?: number
@@ -95,6 +96,10 @@ export const normalizeSavedCalculationPayload = (
     propertyInsuranceBasis:
       record.propertyInsuranceBasis === 'loanAmount' ? 'loanAmount' : 'propertyValue',
     propertyInsuranceRatePercent: Number(record.propertyInsuranceRatePercent ?? 0),
+  }
+
+  if ('loanStartDate' in record) {
+    payload.loanStartDate = String(record.loanStartDate ?? '')
   }
 
   if ('wibor' in record || 'margin' in record) {

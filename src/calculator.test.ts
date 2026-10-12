@@ -58,6 +58,22 @@ describe('calculateLoanSummary', () => {
     },
   )
 
+  it('gives the same schedule totals for a start date in the past or future', () => {
+    const input = {
+      loanAmount: 300000,
+      annualRate: 5,
+      termMonths: 360,
+      repaymentType: 'annuity' as const,
+    }
+    const past = calculateLoanSummary({ ...input, loanStartDate: '2020-03-01' })
+    const future = calculateLoanSummary({ ...input, loanStartDate: '2030-03-01' })
+
+    expect(past.schedule.length).toBe(future.schedule.length)
+    expect(past.totalPaid).toBeCloseTo(future.totalPaid, 2)
+    expect(past.totalInterest).toBeCloseTo(future.totalInterest, 2)
+    expect(past.schedule[0].payment).toBeCloseTo(future.schedule[0].payment, 2)
+  })
+
   it('calculates annuity for a standard mortgage', () => {
     const result = calculateLoanSummary({
       loanAmount: 300000,

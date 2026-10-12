@@ -299,6 +299,20 @@ describe('registration flow', () => {
     expect((month as HTMLSelectElement).value).toBe('11')
   })
 
+  it('updates the first schedule payment date when credit start date changes', async () => {
+    render(<App />)
+
+    const monthSelects = screen.getAllByRole('combobox', { name: 'Miesiąc' })
+    const yearSelects = screen.getAllByRole('combobox', { name: 'Rok' })
+
+    // The first month/year pair is "Data startu kredytu" in Dane podstawowe
+    fireEvent.change(yearSelects[0], { target: { value: '2025' } })
+    fireEvent.change(monthSelects[0], { target: { value: '6' } })
+
+    const firstYearGroup = document.querySelector('.year-group')
+    expect(firstYearGroup?.textContent).toContain('czerwiec 2025')
+  })
+
   it('does not show a user as logged in until email confirmation creates a session', async () => {
     mockSupabase.auth.getSession.mockResolvedValue({ data: { session: null } })
     mockSupabase.auth.signUp.mockResolvedValue({
