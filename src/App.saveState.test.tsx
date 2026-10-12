@@ -354,12 +354,16 @@ describe('property insurance calculation modes', () => {
     const { container, unmount } = render(<App />)
     const view = within(container)
 
-    const calculationTypeSelect = view.getByRole('combobox', { name: 'Sposób naliczania' }) as HTMLSelectElement
+    const calculationTypeSelect = view.getByRole('combobox', {
+      name: 'Sposób naliczania ubezpieczenia nieruchomości',
+    }) as HTMLSelectElement
     expect(calculationTypeSelect.value).toBe('percentage')
 
-    const rateInput = view.getByLabelText('Stawka ubezpieczenia') as HTMLInputElement
-    const sumInput = view.getByLabelText('Suma ubezpieczenia') as HTMLInputElement
-    const frequencySelect = view.getByLabelText('Częstotliwość składki') as HTMLSelectElement
+    const rateInput = view.getByLabelText('Stawka ubezpieczenia nieruchomości') as HTMLInputElement
+    const sumInput = view.getByLabelText('Suma ubezpieczenia nieruchomości') as HTMLInputElement
+    const frequencySelect = view.getByLabelText(
+      'Częstotliwość składki ubezpieczenia nieruchomości',
+    ) as HTMLSelectElement
     const basisSelect = view.getByLabelText('Podstawa kalkulacji') as HTMLSelectElement
 
     expect(rateInput).toBeTruthy()
@@ -381,14 +385,18 @@ describe('property insurance calculation modes', () => {
     const { container, unmount } = render(<App />)
     const view = within(container)
 
-    const calculationTypeSelect = view.getByRole('combobox', { name: 'Sposób naliczania' })
+    const calculationTypeSelect = view.getByRole('combobox', {
+      name: 'Sposób naliczania ubezpieczenia nieruchomości',
+    })
     fireEvent.change(calculationTypeSelect, { target: { value: 'amount' } })
 
-    expect(view.queryByLabelText('Stawka ubezpieczenia')).toBeNull()
+    expect(view.queryByLabelText('Stawka ubezpieczenia nieruchomości')).toBeNull()
     expect(view.queryByLabelText('Podstawa kalkulacji')).toBeNull()
 
-    const sumInput = view.getByLabelText('Suma ubezpieczenia') as HTMLInputElement
-    const frequencySelect = view.getByLabelText('Częstotliwość składki') as HTMLSelectElement
+    const sumInput = view.getByLabelText('Suma ubezpieczenia nieruchomości') as HTMLInputElement
+    const frequencySelect = view.getByLabelText(
+      'Częstotliwość składki ubezpieczenia nieruchomości',
+    ) as HTMLSelectElement
 
     expect(sumInput).toBeTruthy()
     expect(sumInput.readOnly).toBe(false)
@@ -405,11 +413,15 @@ describe('property insurance calculation modes', () => {
     const { container, unmount } = render(<App />)
     const view = within(container)
 
-    const calculationTypeSelect = view.getByRole('combobox', { name: 'Sposób naliczania' })
+    const calculationTypeSelect = view.getByRole('combobox', {
+      name: 'Sposób naliczania ubezpieczenia nieruchomości',
+    })
     fireEvent.change(calculationTypeSelect, { target: { value: 'amount' } })
 
-    const sumInput = view.getByLabelText('Suma ubezpieczenia') as HTMLInputElement
-    const frequencySelect = view.getByLabelText('Częstotliwość składki') as HTMLSelectElement
+    const sumInput = view.getByLabelText('Suma ubezpieczenia nieruchomości') as HTMLInputElement
+    const frequencySelect = view.getByLabelText(
+      'Częstotliwość składki ubezpieczenia nieruchomości',
+    ) as HTMLSelectElement
 
     fireEvent.change(sumInput, { target: { value: '1200' } })
     fireEvent.change(frequencySelect, { target: { value: 'annual' } })
@@ -420,6 +432,105 @@ describe('property insurance calculation modes', () => {
     // In row 2 (index 1), Koszty dodatkowe column (index 6) should show 300,00 zł
     const cells = rows[1].querySelectorAll('td')
     expect(cells[6].textContent).toContain('300,00')
+
+    unmount()
+  })
+})
+
+describe('life insurance calculation modes', () => {
+  it('renders amount mode by default with premium input, duration, and units', () => {
+    const { container, unmount } = render(<App />)
+    const view = within(container)
+
+    const calculationTypeSelect = view.getByRole('combobox', {
+      name: 'Sposób naliczania ubezpieczenia na życie',
+    }) as HTMLSelectElement
+    expect(calculationTypeSelect.value).toBe('amount')
+
+    const premiumInput = view.getByLabelText(
+      'Składka miesięczna ubezpieczenia na życie',
+    ) as HTMLInputElement
+    const durationInput = view.getByLabelText('Czas ubezpieczenia') as HTMLInputElement
+    const yearsButton = view.getByRole('button', { name: 'Lata' })
+    const monthsButton = view.getByRole('button', { name: 'Miesiące' })
+
+    expect(premiumInput).toBeTruthy()
+    expect(premiumInput.readOnly).toBe(false)
+    expect(premiumInput.value).toBe('200')
+    expect(durationInput.value).toBe('24')
+    expect(monthsButton.getAttribute('aria-pressed')).toBe('true')
+    expect(yearsButton.getAttribute('aria-pressed')).toBe('false')
+
+    expect(view.queryByLabelText('Stawka ubezpieczenia na życie')).toBeNull()
+
+    unmount()
+  })
+
+  it('switches to percentage mode, calculates premium from loan amount, keeps duration and units', () => {
+    const { container, unmount } = render(<App />)
+    const view = within(container)
+
+    const calculationTypeSelect = view.getByRole('combobox', {
+      name: 'Sposób naliczania ubezpieczenia na życie',
+    })
+    fireEvent.change(calculationTypeSelect, { target: { value: 'percentage' } })
+
+    const rateInput = view.getByLabelText('Stawka ubezpieczenia na życie') as HTMLInputElement
+    const premiumInput = view.getByLabelText(
+      'Składka miesięczna ubezpieczenia na życie',
+    ) as HTMLInputElement
+    const durationInput = view.getByLabelText('Czas ubezpieczenia') as HTMLInputElement
+    const monthsButton = view.getByRole('button', { name: 'Miesiące' })
+
+    expect(rateInput).toBeTruthy()
+    expect(rateInput.value).toBe('0.05')
+    expect(premiumInput.readOnly).toBe(true)
+    // 350 000 * 0.05% = 175
+    expect(premiumInput.value).toBe('175')
+    expect(durationInput.value).toBe('24')
+    expect(monthsButton.getAttribute('aria-pressed')).toBe('true')
+
+    // Changing rate updates monthly premium: 350 000 * 0.1% = 350
+    fireEvent.change(rateInput, { target: { value: '0.1' } })
+    expect(premiumInput.value).toBe('350')
+
+    unmount()
+  })
+
+  it('reduces life insurance monthly cost in schedule as loan balance decreases in percentage mode', () => {
+    const { container, unmount } = render(<App />)
+    const view = within(container)
+
+    // Set life insurance to percentage mode
+    const calculationTypeSelect = view.getByRole('combobox', {
+      name: 'Sposób naliczania ubezpieczenia na życie',
+    })
+    fireEvent.change(calculationTypeSelect, { target: { value: 'percentage' } })
+
+    // Set property insurance to amount mode with 0 to isolate life insurance in additional costs
+    const propertyCalcSelect = view.getByRole('combobox', {
+      name: 'Sposób naliczania ubezpieczenia nieruchomości',
+    })
+    fireEvent.change(propertyCalcSelect, { target: { value: 'amount' } })
+    const propertySumInput = view.getByLabelText('Suma ubezpieczenia nieruchomości') as HTMLInputElement
+    fireEvent.change(propertySumInput, { target: { value: '0' } })
+
+    const rows = container.querySelectorAll('.table-wrap tbody tr')
+    expect(rows.length).toBeGreaterThan(12)
+
+    // Row 2 (month 2, index 1) vs Row 12 (month 12, index 11)
+    // Month 1 has upfront fees, so compare months 2 and 12
+    const cellMonth2Costs = rows[1].querySelectorAll('td')[6].textContent || ''
+    const cellMonth12Costs = rows[11].querySelectorAll('td')[6].textContent || ''
+
+    const parsePln = (txt: string) =>
+      Number(txt.replace(/\s|zł/g, '').replace(',', '.'))
+
+    const costMonth2 = parsePln(cellMonth2Costs)
+    const costMonth12 = parsePln(cellMonth12Costs)
+
+    // As principal is repaid, balance decreases, so month 12 insurance cost should be strictly lower than month 2
+    expect(costMonth12).toBeLessThan(costMonth2)
 
     unmount()
   })

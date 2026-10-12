@@ -44,6 +44,8 @@ type FormState = {
   appraisal: number
   commission: number
   propertyValue: number
+  lifeInsuranceCalculationType: 'percentage' | 'amount'
+  lifeInsuranceRatePercent: number
   lifeInsuranceMonthlyPremium: number
   lifeInsuranceMonths: number
   lifeInsuranceDurationUnit: 'months' | 'years'
@@ -105,6 +107,8 @@ const initialForm: FormState = {
   appraisal: 1800,
   commission: 0,
   propertyValue: 400000,
+  lifeInsuranceCalculationType: 'amount',
+  lifeInsuranceRatePercent: 0.05,
   lifeInsuranceMonthlyPremium: 200,
   lifeInsuranceMonths: 24,
   lifeInsuranceDurationUnit: 'months',
@@ -561,6 +565,16 @@ function App() {
     return units === 'years' ? Math.round(months * 12) : months
   }
 
+  const getLifeInsuranceMonthlyPremium = (currentForm: FormState, balance?: number) => {
+    if (currentForm.lifeInsuranceCalculationType === 'percentage') {
+      const rateDecimal = (Number(currentForm.lifeInsuranceRatePercent) || 0) / 100
+      const base = balance !== undefined ? balance : currentForm.amount
+      return Math.max(0, base * rateDecimal)
+    }
+
+    return Math.max(0, Number(currentForm.lifeInsuranceMonthlyPremium) || 0)
+  }
+
   const getPropertyInsuranceMonthlyPremium = (currentForm: FormState) => {
     if (currentForm.propertyInsuranceCalculationType === 'amount') {
       const amount = Math.max(0, Number(currentForm.propertyInsuranceAmount) || 0)
@@ -579,7 +593,11 @@ function App() {
       : annualPremium
   }
 
-  const getMonthlyAdditionalCost = (monthNumber: number, currentForm: FormState) => {
+  const getMonthlyAdditionalCost = (
+    monthNumber: number,
+    currentForm: FormState,
+    balance?: number,
+  ) => {
     const firstMonthFee =
       currentForm.applicationFee +
       currentForm.notary +
@@ -588,16 +606,14 @@ function App() {
 
     const lifeInsurancePeriod = getLifeInsuranceMonths(currentForm)
     const lifeInsuranceCost =
-      monthNumber <= lifeInsurancePeriod ? Number(currentForm.lifeInsuranceMonthlyPremium || 0) : 0
+      monthNumber <= lifeInsurancePeriod
+        ? getLifeInsuranceMonthlyPremium(currentForm, balance)
+        : 0
 
     const propertyInsuranceCost = getPropertyInsuranceMonthlyPremium(currentForm)
 
     return monthNumber === 1 ? firstMonthFee + lifeInsuranceCost + propertyInsuranceCost : lifeInsuranceCost + propertyInsuranceCost
   }
-
-  const totalAdditionalCosts = Array.from({ length: form.years * 12 }, (_, index) =>
-    getMonthlyAdditionalCost(index + 1, form),
-  ).reduce((sum, value) => sum + value, 0)
 
   const summary = useMemo(
     () =>
@@ -619,6 +635,16 @@ function App() {
       }),
     [form],
   )
+
+  const totalAdditionalCosts = useMemo(() => {
+    return Array.from({ length: form.years * 12 }, (_, index) => {
+      const startBalance =
+        index === 0
+          ? form.amount
+          : summary.schedule[index - 1]?.remainingBalance ?? 0
+      return getMonthlyAdditionalCost(index + 1, form, startBalance)
+    }).reduce((sum, value) => sum + value, 0)
+  }, [form, summary.schedule])
 
   const totalCost = summary.totalPaid + totalAdditionalCosts
   const monthlyBurden = summary.monthlyPayment + totalAdditionalCosts / Math.max(form.years * 12, 1)
@@ -698,12 +724,17 @@ function App() {
       1,
     )
 
+    const startBalance =
+      index === 0
+        ? form.amount
+        : summary.schedule[index - 1]?.remainingBalance ?? 0
+
     return {
       ...row,
       paymentDate,
       monthLabel: `${monthNames[paymentDate.getMonth()]} ${paymentDate.getFullYear()}`,
       year: paymentDate.getFullYear(),
-      additionalCosts: getMonthlyAdditionalCost(index + 1, form),
+      additionalCosts: getMonthlyAdditionalCost(index + 1, form, startBalance),
     }
   })
 
@@ -749,6 +780,24 @@ function App() {
         lifeInsuranceMonths: converted,
       }
     })
+  }
+
+  const handleLifeInsuranceCalculationTypeChange = (
+    calculationType: 'percentage' | 'amount',
+  ) => {
+    setForm((current) => ({
+      ...current,
+      lifeInsuranceCalculationType: calculationType,
+      lifeInsuranceMonthlyPremium:
+        calculationType === 'amount'
+          ? Number(
+              getLifeInsuranceMonthlyPremium({
+                ...current,
+                lifeInsuranceCalculationType: 'percentage',
+              }).toFixed(2),
+            )
+          : current.lifeInsuranceMonthlyPremium,
+    }))
   }
 
   const handlePropertyInsuranceCalculationTypeChange = (
@@ -1132,7 +1181,7 @@ function App() {
               </label>
 
               <label>
-                <span>Prowizja / inne</span>
+                <span>Inne</span>
                 <input
                   type="number"
                   min="0"
@@ -1146,18 +1195,66 @@ function App() {
             <div className="insurance-block">
               <h4>Ubezpieczenie na życie</h4>
               <div className="field-grid compact">
-                <label>
-                  <span>Składka miesięczna</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="10"
-                    value={form.lifeInsuranceMonthlyPremium}
+                <label className="full-width">
+                  <span>Sposób naliczania</span>
+                  <select
+                    aria-label="Sposób naliczania ubezpieczenia na życie"
+                    value={form.lifeInsuranceCalculationType}
                     onChange={(event) =>
-                      updateField('lifeInsuranceMonthlyPremium', Number(event.target.value))
+                      handleLifeInsuranceCalculationTypeChange(
+                        event.target.value as 'percentage' | 'amount',
+                      )
                     }
-                  />
+                  >
+                    <option value="amount">Kwotowo</option>
+                    <option value="percentage">Procentowo</option>
+                  </select>
                 </label>
+
+                {form.lifeInsuranceCalculationType === 'percentage' ? (
+                  <>
+                    <label>
+                      <span>Stawka ubezpieczenia</span>
+                      <input
+                        type="number"
+                        aria-label="Stawka ubezpieczenia na życie"
+                        min="0"
+                        step="0.01"
+                        value={form.lifeInsuranceRatePercent}
+                        onChange={(event) =>
+                          updateField('lifeInsuranceRatePercent', Number(event.target.value))
+                        }
+                      />
+                    </label>
+
+                    <label>
+                      <span>Składka miesięczna</span>
+                      <input
+                        type="number"
+                        aria-label="Składka miesięczna ubezpieczenia na życie"
+                        min="0"
+                        step="0.01"
+                        value={Number(getLifeInsuranceMonthlyPremium(form).toFixed(2))}
+                        readOnly
+                        aria-readonly="true"
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <label>
+                    <span>Składka miesięczna</span>
+                    <input
+                      type="number"
+                      aria-label="Składka miesięczna ubezpieczenia na życie"
+                      min="0"
+                      step="10"
+                      value={form.lifeInsuranceMonthlyPremium}
+                      onChange={(event) =>
+                        updateField('lifeInsuranceMonthlyPremium', Number(event.target.value))
+                      }
+                    />
+                  </label>
+                )}
 
                 <label>
                   <span>Czas ubezpieczenia</span>
@@ -1193,6 +1290,7 @@ function App() {
                 <label className="full-width">
                   <span>Sposób naliczania</span>
                   <select
+                    aria-label="Sposób naliczania ubezpieczenia nieruchomości"
                     value={form.propertyInsuranceCalculationType}
                     onChange={(event) =>
                       handlePropertyInsuranceCalculationTypeChange(
@@ -1211,6 +1309,7 @@ function App() {
                       <span>Stawka ubezpieczenia</span>
                       <input
                         type="number"
+                        aria-label="Stawka ubezpieczenia nieruchomości"
                         min="0"
                         step="0.01"
                         value={form.propertyInsuranceRatePercent}
@@ -1224,6 +1323,7 @@ function App() {
                       <span>Suma ubezpieczenia</span>
                       <input
                         type="number"
+                        aria-label="Suma ubezpieczenia nieruchomości"
                         min="0"
                         step="0.01"
                         value={Number(getPropertyInsuranceMonthlyPremium(form).toFixed(2))}
@@ -1235,6 +1335,7 @@ function App() {
                     <label>
                       <span>Częstotliwość składki</span>
                       <select
+                        aria-label="Częstotliwość składki ubezpieczenia nieruchomości"
                         value={form.propertyInsuranceFrequency}
                         onChange={(event) =>
                           updateField('propertyInsuranceFrequency', event.target.value as 'monthly' | 'annual')
@@ -1264,6 +1365,7 @@ function App() {
                       <span>Suma ubezpieczenia</span>
                       <input
                         type="number"
+                        aria-label="Suma ubezpieczenia nieruchomości"
                         min="0"
                         step="0.01"
                         value={form.propertyInsuranceAmount}
@@ -1276,6 +1378,7 @@ function App() {
                     <label>
                       <span>Częstotliwość składki</span>
                       <select
+                        aria-label="Częstotliwość składki ubezpieczenia nieruchomości"
                         value={form.propertyInsuranceFrequency}
                         onChange={(event) =>
                           updateField('propertyInsuranceFrequency', event.target.value as 'monthly' | 'annual')

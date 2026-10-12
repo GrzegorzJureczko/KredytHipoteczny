@@ -20,6 +20,8 @@ export type SavedCalculationPayload = {
   lifeInsuranceMonthlyPremium: number
   lifeInsuranceMonths: number
   lifeInsuranceDurationUnit: 'months' | 'years'
+  lifeInsuranceCalculationType?: 'percentage' | 'amount'
+  lifeInsuranceRatePercent?: number
   propertyInsuranceFrequency: 'monthly' | 'annual'
   propertyInsuranceBasis: 'propertyValue' | 'loanAmount'
   propertyInsuranceRatePercent: number
@@ -102,6 +104,15 @@ export const normalizeSavedCalculationPayload = (
 
   if ('loanStartDate' in record) {
     payload.loanStartDate = String(record.loanStartDate ?? '')
+  }
+
+  if ('lifeInsuranceCalculationType' in record) {
+    payload.lifeInsuranceCalculationType =
+      record.lifeInsuranceCalculationType === 'percentage' ? 'percentage' : 'amount'
+  }
+
+  if ('lifeInsuranceRatePercent' in record) {
+    payload.lifeInsuranceRatePercent = Number(record.lifeInsuranceRatePercent ?? 0)
   }
 
   if ('propertyInsuranceCalculationType' in record) {

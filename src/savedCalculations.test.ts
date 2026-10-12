@@ -54,6 +54,8 @@ describe('normalizeSavedCalculationPayload', () => {
       lifeInsuranceMonthlyPremium: '250',
       lifeInsuranceMonths: '24',
       lifeInsuranceDurationUnit: 'years',
+      lifeInsuranceCalculationType: 'percentage',
+      lifeInsuranceRatePercent: '0.06',
       propertyInsuranceFrequency: 'annual',
       propertyInsuranceBasis: 'loanAmount',
       propertyInsuranceRatePercent: '0.04',
@@ -64,6 +66,8 @@ describe('normalizeSavedCalculationPayload', () => {
     expect(payload).not.toBeNull()
     expect(payload?.repaymentType).toBe('annuity')
     expect(payload?.extraPaymentMode).toBe('reduceTerm')
+    expect(payload?.lifeInsuranceCalculationType).toBe('percentage')
+    expect(payload?.lifeInsuranceRatePercent).toBe(0.06)
     expect(payload?.propertyInsuranceCalculationType).toBe('amount')
     expect(payload?.propertyInsuranceAmount).toBe(250)
     expect(payload?.rateChanges[0]).toEqual({ id: 1, date: '2028-01-01', rate: 5.2 })
