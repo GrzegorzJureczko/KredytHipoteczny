@@ -257,6 +257,53 @@ describe('calculateLoanSummary', () => {
     expect(result.schedule[25].payment).toBeGreaterThan(result.schedule[0].payment)
   })
 
+  it('updates installments on rate changes even after an extra payment with reduceInstallment', () => {
+    const result = calculateLoanSummary({
+      loanAmount: 681920,
+      annualRate: 7.55,
+      termMonths: 300,
+      repaymentType: 'annuity',
+      loanStartDate: '2025-06-01',
+      extraPayments: [
+        { amount: 383953, date: '2025-06-01', effect: 'reduceInstallment' },
+      ],
+      rateChanges: [
+        { date: '2025-07-01', rate: 7.04 },
+        { date: '2025-08-01', rate: 6.81 },
+        { date: '2025-09-01', rate: 6.52 },
+        { date: '2025-11-01', rate: 6.30 },
+      ],
+    })
+
+    // Month 1 (June 2025): initial rate 7.55%
+    expect(result.schedule[0].payment).toBeCloseTo(5061.53, 2)
+    expect(result.schedule[0].extraPayment).toBe(383953)
+
+    // Month 2 (July 2025): recast due to overpayment + rate 7.04%
+    const julyPayment = result.schedule[1].payment
+    expect(julyPayment).toBeLessThan(result.schedule[0].payment)
+
+    // Month 3 (August 2025): rate drops to 6.81%, installment MUST drop
+    const augPayment = result.schedule[2].payment
+    expect(augPayment).toBeLessThan(julyPayment)
+
+    // Month 4 (September 2025): rate drops to 6.52%, installment MUST drop
+    const sepPayment = result.schedule[3].payment
+    expect(sepPayment).toBeLessThan(augPayment)
+
+    // Month 5 (October 2025): rate unchanged at 6.52%, installment stays constant
+    const octPayment = result.schedule[4].payment
+    expect(octPayment).toBeCloseTo(sepPayment, 2)
+
+    // Month 6 (November 2025): rate drops to 6.30%, installment MUST drop
+    const novPayment = result.schedule[5].payment
+    expect(novPayment).toBeLessThan(octPayment)
+
+    // Month 7 (December 2025): rate unchanged at 6.30%, installment stays constant
+    const decPayment = result.schedule[6].payment
+    expect(decPayment).toBeCloseTo(novPayment, 2)
+  })
+
   it('ignores extra payments before their start date for recurring payments', () => {
     const result = calculateLoanSummary({
       loanAmount: 300000,

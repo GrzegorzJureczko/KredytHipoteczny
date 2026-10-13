@@ -129,56 +129,6 @@ const getEffectiveAnnualRate = (monthDate: Date, baseRate: number, rateChanges: 
   return Math.max(0, effectiveRate)
 }
 
-const calculatePaymentWithPlannedExtraPayments = (
-  balance: number,
-  startMonthIndex: number,
-  annualRates: number[],
-  plannedExtraPayments: number[],
-) => {
-  const remainingMonths = annualRates.length - startMonthIndex
-  if (remainingMonths <= 0 || balance <= 0) {
-    return 0
-  }
-
-  const remainingBalanceAfterPayments = (payment: number) => {
-    let projectedBalance = balance
-
-    for (let index = startMonthIndex; index < annualRates.length; index++) {
-      const interest = projectedBalance * (annualRates[index] / 100 / 12)
-      const principal = Math.min(projectedBalance, Math.max(0, payment - interest))
-      const extraPayment = Math.min(
-        Math.max(0, projectedBalance - principal),
-        plannedExtraPayments[index],
-      )
-      projectedBalance -= principal + extraPayment
-
-      if (projectedBalance <= 0) {
-        return 0
-      }
-    }
-
-    return projectedBalance
-  }
-
-  let lowerPayment = 0
-  let upperPayment = balance
-
-  while (remainingBalanceAfterPayments(upperPayment) > 0) {
-    upperPayment *= 2
-  }
-
-  for (let iteration = 0; iteration < 60; iteration++) {
-    const candidatePayment = (lowerPayment + upperPayment) / 2
-    if (remainingBalanceAfterPayments(candidatePayment) > 0) {
-      lowerPayment = candidatePayment
-    } else {
-      upperPayment = candidatePayment
-    }
-  }
-
-  return upperPayment
-}
-
 export function calculateLoanSummary(input: LoanInput): LoanSummary {
   const loanAmount = Math.max(0, Number(input.loanAmount) || 0)
   const annualRate = Math.max(0, Number(input.annualRate) || 0)
@@ -219,7 +169,6 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
     reduceTerm: 0,
     reduceInstallment: 0,
   }))
-  const recurringInstallmentPaymentsByMonth = Array.from({ length: termMonths }, () => 0)
 
   scheduleDates.forEach((date, index) => {
     if (
@@ -228,9 +177,6 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
         (!monthlyRecurringStartDate && index + 1 >= startMonth))
     ) {
       extraPaymentsByMonth[index][extraPaymentMode] += extraMonthlyPayment
-      if (extraPaymentMode === 'reduceInstallment') {
-        recurringInstallmentPaymentsByMonth[index] = extraMonthlyPayment
-      }
     }
   })
 
@@ -250,15 +196,13 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
     extraPaymentsByMonth[monthIndex][effect] += Math.max(0, Number(extraPayment.amount) || 0)
   }
 
-  const plannedInstallmentExtras = extraPaymentsByMonth.map(
-    (payments, index) => payments.reduceInstallment - recurringInstallmentPaymentsByMonth[index],
-  )
-
   let remainingBalance = loanAmount
   let totalPaid = 0
   let totalInterest = 0
-  let installmentRecastActive = false
+  let recastAnnuity = false
+  let recastDecreasing = false
   let currentAnnuityPayment = monthlyPayment
+  let currentDecreasingPrincipal = loanAmount / termMonths
   let previousAnnualRate = annualRates[0] ?? annualRate
 
   for (let month = 1; month <= termMonths; month++) {
@@ -273,33 +217,28 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
     let regularPrincipal: number
     let payment: number
 
+    const rateChanged = currentAnnualRate !== previousAnnualRate
+
     if (input.repaymentType === 'annuity') {
-      if (installmentRecastActive) {
-        currentAnnuityPayment = calculatePaymentWithPlannedExtraPayments(
-          remainingBalance,
-          monthIndex,
-          annualRates,
-          plannedInstallmentExtras,
-        )
-      } else if (currentAnnualRate !== previousAnnualRate) {
+      if (recastAnnuity || rateChanged) {
         currentAnnuityPayment = calculatePaymentForBalance(
           remainingBalance,
           monthsRemaining,
           currentAnnualRate,
-          input.repaymentType,
+          'annuity',
         )
+        recastAnnuity = false
       }
 
       regularPrincipal = Math.min(remainingBalance, Math.max(0, currentAnnuityPayment - interest))
       payment = regularPrincipal + interest
     } else {
-      const plannedFutureExtras = plannedInstallmentExtras
-        .slice(monthIndex)
-        .reduce((sum, extra) => sum + extra, 0)
-      regularPrincipal = installmentRecastActive
-        ? Math.max(0, (remainingBalance - plannedFutureExtras) / monthsRemaining)
-        : loanAmount / termMonths
-      regularPrincipal = Math.min(remainingBalance, regularPrincipal)
+      if (recastDecreasing) {
+        currentDecreasingPrincipal = Math.max(0, remainingBalance / monthsRemaining)
+        recastDecreasing = false
+      }
+
+      regularPrincipal = Math.min(remainingBalance, currentDecreasingPrincipal)
       payment = regularPrincipal + interest
     }
 
@@ -324,7 +263,8 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
     })
 
     if (monthlyExtraPayments.reduceInstallment > 0) {
-      installmentRecastActive = true
+      recastAnnuity = true
+      recastDecreasing = true
     }
     previousAnnualRate = currentAnnualRate
 
