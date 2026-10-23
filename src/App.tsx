@@ -832,7 +832,6 @@ function App() {
     <header className="hero">
       <div className="hero-inner">
         <p className="eyebrow">Pełna kontrola nad kosztem kredytu</p>
-        <h1>Porównaj realny koszt kredytu hipotecznego</h1>
         <div className="hero-actions">
           <a className="hero-button hero-button-primary" href="#dane-podstawowe">
             Oblicz ratę

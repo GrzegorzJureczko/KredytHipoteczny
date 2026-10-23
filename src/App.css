@@ -876,8 +876,8 @@ tbody tr:hover {
   position: relative;
   display: flex;
   align-items: center;
-  min-height: clamp(360px, 56vh, 560px);
-  padding: 64px clamp(16px, 4vw, 48px);
+  min-height: 0;
+  padding: 32px clamp(16px, 4vw, 48px);
   overflow: hidden;
   color: #fff;
   background:
@@ -907,7 +907,7 @@ tbody tr:hover {
 }
 
 .hero .eyebrow {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   color: rgba(255, 255, 255, 0.7);
   font-size: 0.8rem;
   letter-spacing: 0.3em;
@@ -1183,11 +1183,11 @@ select:focus {
   border-bottom: 4px solid var(--brand-red);
 }
 
-.summary-highlight span {
-  color: rgba(255, 255, 255, 0.72);
+.summary-cards .summary-highlight span {
+  color: rgba(255, 255, 255, 0.78);
 }
 
-.summary-highlight strong {
+.summary-cards .summary-highlight strong {
   color: #fff;
   font-size: 2.4rem;
   font-weight: 300;
@@ -1269,7 +1269,6 @@ tbody tr:hover {
   }
 
   .hero {
-    min-height: 320px;
-    padding: 48px 20px;
+    padding: 24px 20px;
   }
 }
