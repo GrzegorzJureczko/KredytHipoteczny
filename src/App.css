@@ -1267,6 +1267,25 @@ tbody tr:hover {
 
 .auth-message {
   border-radius: 0;
+  border: 1px solid #101010;
+  border-left-width: 4px;
+  background: #f7f7f7;
+  color: #101010;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.auth-message.success {
+  border-color: #101010;
+  background: #f7f7f7;
+  color: #101010;
+}
+
+.auth-message.error {
+  border-color: var(--brand-red);
+  background: #fff;
+  color: var(--brand-red);
 }
 
 .site-footer {
