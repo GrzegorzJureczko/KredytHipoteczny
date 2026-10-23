@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import './App.css'
 import { calculateLoanSummary, type ExtraPaymentMode, type RepaymentType } from './calculator'
 import { getAuthErrorMessage } from './authError'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import {
+  getLegacyLoanStartDate,
   normalizeSavedCalculationPayload,
   type SavedCalculationPayload,
 } from './savedCalculations'
@@ -198,6 +199,118 @@ type SavedCalculationEntry = {
   name: string
   payload: SavedCalculationPayload
   created_at?: string
+  updated_at?: string
+}
+
+type LoanInput = Parameters<typeof calculateLoanSummary>[0]
+
+type ConfirmRequest = {
+  title: string
+  message: string
+  confirmLabel: string
+  onConfirm: () => void
+}
+
+const buildLoanInput = (source: FormState): LoanInput => ({
+  loanAmount: source.amount,
+  annualRate: source.rate,
+  termMonths: source.years * 12,
+  repaymentType: source.repaymentType,
+  loanStartDate: source.loanStartDate,
+  rateChanges: source.rateChanges.map(({ date, rate }) => ({ date, rate })),
+  extraMonthlyPayment: source.extraMonthlyPayment,
+  extraMonthlyPaymentStartDate: source.extraMonthlyPaymentStartDate,
+  extraPayments: source.extraPayments.map(({ amount, date, effect }) => ({
+    amount,
+    date,
+    effect,
+  })),
+  extraPaymentMode: source.extraPaymentMode,
+})
+
+const payloadToFormState = (payload: SavedCalculationPayload): FormState => {
+  const snapshot = JSON.parse(JSON.stringify(payload)) as Partial<FormState>
+  const wibor = Number(snapshot.wibor ?? snapshot.rate ?? 0)
+  const margin = Number(snapshot.margin ?? 0)
+
+  return {
+    ...initialForm,
+    ...snapshot,
+    rate: getAnnualRateFromSplit(wibor, margin),
+    wibor,
+    margin,
+    rateChanges: snapshot.rateChanges ?? [],
+    extraPayments: snapshot.extraPayments ?? [],
+  }
+}
+
+const formatSavedDate = (value: string) =>
+  new Date(value).toLocaleString('pl-PL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+
+const getSavedDateLabel = (entry: SavedCalculationEntry) => {
+  if (entry.updated_at) {
+    return `Ostatni zapis: ${formatSavedDate(entry.updated_at)}`
+  }
+
+  return entry.created_at ? `Utworzono: ${formatSavedDate(entry.created_at)}` : 'Utworzono: dziś'
+}
+
+const getSavedActivityStamp = (entry: SavedCalculationEntry) =>
+  Date.parse(entry.updated_at ?? entry.created_at ?? '') || 0
+
+const ConfirmDialog = ({
+  request,
+  onCancel,
+  onConfirm,
+}: {
+  request: ConfirmRequest
+  onCancel: () => void
+  onConfirm: () => void
+}) => {
+  const cancelButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    cancelButtonRef.current?.focus()
+  }, [])
+
+  return (
+    <div className="confirm-backdrop">
+      <div
+        className="confirm-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-dialog-title"
+        aria-describedby="confirm-dialog-message"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            onCancel()
+          }
+        }}
+      >
+        <h3 id="confirm-dialog-title">{request.title}</h3>
+        <p id="confirm-dialog-message">{request.message}</p>
+        <div className="confirm-actions">
+          <button
+            ref={cancelButtonRef}
+            type="button"
+            className="secondary-button"
+            onClick={onCancel}
+          >
+            Anuluj
+          </button>
+          <button type="button" className="primary-button" onClick={onConfirm}>
+            {request.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function App() {
@@ -206,9 +319,16 @@ function App() {
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authConfirmPassword, setAuthConfirmPassword] = useState('')
-  const [savedCalculationName, setSavedCalculationName] = useState('')
+  const [saveDraftName, setSaveDraftName] = useState('')
   const [savedCalculations, setSavedCalculations] = useState<SavedCalculationEntry[]>([])
-  const [selectedSavedCalculationId, setSelectedSavedCalculationId] = useState<string | null>(null)
+  const [invalidSavedCount, setInvalidSavedCount] = useState(0)
+  const [activeCalculation, setActiveCalculation] = useState<{ id: string; name: string } | null>(
+    null,
+  )
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null)
+  const nameInputRef = useRef<HTMLInputElement>(null)
   const [savedCalculationsExpanded, setSavedCalculationsExpanded] = useState(false)
   const [lastSavedForm, setLastSavedForm] = useState<FormState>(initialForm)
   const [authMessage, setAuthMessage] = useState<{ type: 'success' | 'error'; text: string }>({
@@ -219,11 +339,40 @@ function App() {
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
+  const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(lastSavedForm)
+  const shouldWarnAboutChanges = Boolean(currentUserEmail) && hasUnsavedChanges
+
   useEffect(() => {
-    if (currentUserEmail) {
-      setSavedCalculationsExpanded(false)
+    if (!shouldWarnAboutChanges) {
+      return
     }
-  }, [currentUserEmail])
+
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault()
+
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [shouldWarnAboutChanges])
+
+  const savedCalculationSummaries = useMemo(
+    () =>
+      new Map(
+        savedCalculations.map((entry) => {
+          const savedForm = payloadToFormState(entry.payload)
+          const savedSummary = calculateLoanSummary(buildLoanInput(savedForm))
+
+          return [
+            entry.id,
+            {
+              amount: savedForm.amount,
+              years: savedForm.years,
+              rate: savedForm.rate,
+              monthlyPayment: savedSummary.monthlyPayment,
+            },
+          ] as const
+        }),
+      ),
+    [savedCalculations],
+  )
 
   useEffect(() => {
     if (!authMessage.text) {
@@ -258,7 +407,7 @@ function App() {
 
     const { data, error } = await supabase
       .from('saved_calculations')
-      .select('id, name, payload, created_at')
+      .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
@@ -267,11 +416,16 @@ function App() {
       return
     }
 
+    let invalidCount = 0
     const normalized = (data ?? [])
       .map((entry) => {
-        const payload = normalizeSavedCalculationPayload(entry.payload as unknown)
+        const payload = normalizeSavedCalculationPayload(
+          entry.payload as unknown,
+          getLegacyLoanStartDate(entry.created_at ?? undefined),
+        )
 
         if (!payload) {
+          invalidCount += 1
           return null
         }
 
@@ -280,11 +434,15 @@ function App() {
           name: entry.name ?? 'Zapisana kalkulacja',
           payload,
           created_at: entry.created_at ?? undefined,
+          updated_at: entry.updated_at ?? undefined,
         }
       })
       .filter(Boolean) as SavedCalculationEntry[]
 
+    normalized.sort((a, b) => getSavedActivityStamp(b) - getSavedActivityStamp(a))
+
     setSavedCalculations(normalized)
+    setInvalidSavedCount(invalidCount)
   }
 
   useEffect(() => {
@@ -419,7 +577,26 @@ function App() {
     setAuthConfirmPassword('')
   }
 
-  const handleLogout = async () => {
+  const discardChangesThen = (action: () => void, message: string) => {
+    if (!shouldWarnAboutChanges) {
+      action()
+      return
+    }
+
+    setConfirmRequest({
+      title: 'Niezapisane zmiany',
+      message,
+      confirmLabel: 'Odrzuć zmiany',
+      onConfirm: action,
+    })
+  }
+
+  const detachActiveCalculation = () => {
+    setActiveCalculation(null)
+    setLastSavedForm(initialForm)
+  }
+
+  const performLogout = async () => {
     if (!supabase || !isSupabaseConfigured) {
       setAuthMessage({ type: 'error', text: 'Brakuje konfiguracji Supabase.' })
       return
@@ -435,24 +612,38 @@ function App() {
     setCurrentUserEmail(null)
     setCurrentUserId(null)
     setSavedCalculations([])
-    setSavedCalculationName('')
-    setSelectedSavedCalculationId(null)
-    setLastSavedForm(initialForm)
+    setInvalidSavedCount(0)
+    setSaveDraftName('')
+    setRenamingId(null)
+    setSavedCalculationsExpanded(false)
+    detachActiveCalculation()
     setAuthMessage({ type: 'success', text: 'Wylogowano.' })
   }
 
-  const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(lastSavedForm)
-  const isSaveButtonInactive = selectedSavedCalculationId ? !hasUnsavedChanges : true
+  const handleLogout = () =>
+    discardChangesThen(
+      () => void performLogout(),
+      'Wylogowanie odrzuci niezapisane zmiany w kalkulacji.',
+    )
+
+  const isSaveButtonInactive = activeCalculation ? !hasUnsavedChanges : false
+
+  const focusNameInput = () => {
+    setSavedCalculationsExpanded(true)
+    window.setTimeout(() => nameInputRef.current?.focus(), 0)
+  }
 
   const handleSaveCurrentCalculationClick = () => {
     if (isSaveButtonInactive) {
-      if (!selectedSavedCalculationId && !savedCalculationsExpanded) {
-        setSavedCalculationsExpanded(true)
-      }
       return
     }
 
-    handleSaveCurrentCalculation()
+    if (!activeCalculation) {
+      focusNameInput()
+      return
+    }
+
+    void handleSaveCurrentCalculation()
   }
 
   const saveNewCalculation = async () => {
@@ -461,7 +652,7 @@ function App() {
       return
     }
 
-    const name = savedCalculationName.trim() || `Kalkulacja ${new Date().toLocaleDateString('pl-PL')}`
+    const name = saveDraftName.trim() || `Kalkulacja ${new Date().toLocaleDateString('pl-PL')}`
 
     const { data, error } = await supabase
       .from('saved_calculations')
@@ -481,8 +672,8 @@ function App() {
       return
     }
 
-    setSavedCalculationName('')
-    setSelectedSavedCalculationId(data?.id ?? null)
+    setSaveDraftName('')
+    setActiveCalculation(data?.id ? { id: data.id, name } : null)
     setLastSavedForm(form)
     setAuthMessage({ type: 'success', text: 'Kalkulacja została zapisana.' })
     await loadSavedCalculations(currentUserId)
@@ -494,24 +685,30 @@ function App() {
       return
     }
 
-    if (!selectedSavedCalculationId) {
+    if (!activeCalculation) {
       await saveNewCalculation()
       return
     }
 
-    const name = savedCalculationName.trim() || `Kalkulacja ${new Date().toLocaleDateString('pl-PL')}`
-
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('saved_calculations')
-      .update({
-        name,
-        payload: form,
-        created_at: new Date().toISOString(),
-      })
-      .eq('id', selectedSavedCalculationId)
+      .update({ payload: form })
+      .eq('id', activeCalculation.id)
+      .eq('user_id', currentUserId)
+      .select('id')
 
     if (error) {
       setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+      return
+    }
+
+    if (!data || data.length === 0) {
+      detachActiveCalculation()
+      setAuthMessage({
+        type: 'error',
+        text: 'Nie znaleziono zapisu. Może został usunięty – zapisz kalkulację jako nową.',
+      })
+      await loadSavedCalculations(currentUserId)
       return
     }
 
@@ -520,42 +717,120 @@ function App() {
     await loadSavedCalculations(currentUserId)
   }
 
-  const handleLoadSavedCalculation = async (entry: SavedCalculationEntry) => {
-    const loadedSnapshot = JSON.parse(JSON.stringify(entry.payload)) as Partial<FormState>
-    const wibor = Number((loadedSnapshot as Record<string, unknown>).wibor ?? loadedSnapshot.rate ?? 0)
-    const margin = Number((loadedSnapshot as Record<string, unknown>).margin ?? 0)
-    const normalizedRate = getAnnualRateFromSplit(wibor, margin)
-    const normalizedForm: FormState = {
-      ...initialForm,
-      ...loadedSnapshot,
-      rate: normalizedRate,
-      wibor,
-      margin,
-      rateChanges: loadedSnapshot.rateChanges ?? [],
-      extraPayments: loadedSnapshot.extraPayments ?? [],
-    }
+  const loadCalculation = (entry: SavedCalculationEntry) => {
+    const loadedForm = payloadToFormState(entry.payload)
 
-    setForm(normalizedForm)
-    setLastSavedForm(normalizedForm)
-    setSavedCalculationName(entry.name)
-    setSelectedSavedCalculationId(entry.id)
+    setForm(loadedForm)
+    setLastSavedForm(loadedForm)
+    setActiveCalculation({ id: entry.id, name: entry.name })
+    setRenamingId(null)
+    setSavedCalculationsExpanded(false)
     setAuthMessage({ type: 'success', text: `Wczytano zapis: ${entry.name}.` })
   }
 
-  const handleDeleteSavedCalculation = async (entryId: string) => {
+  const handleLoadSavedCalculation = (entry: SavedCalculationEntry) =>
+    discardChangesThen(
+      () => loadCalculation(entry),
+      `Wczytanie „${entry.name}” odrzuci niezapisane zmiany w bieżącej kalkulacji.`,
+    )
+
+  const startNewCalculation = () =>
+    discardChangesThen(() => {
+      setForm(initialForm)
+      setLastSavedForm(initialForm)
+      setActiveCalculation(null)
+      setSaveDraftName('')
+      setRenamingId(null)
+    }, 'Rozpoczęcie nowej kalkulacji odrzuci niezapisane zmiany.')
+
+  const deleteSavedCalculation = async (entry: SavedCalculationEntry) => {
     if (!supabase || !isSupabaseConfigured || !currentUserId) {
       setAuthMessage({ type: 'error', text: 'Zaloguj się, aby usunąć zapis.' })
       return
     }
 
-    const { error } = await supabase.from('saved_calculations').delete().eq('id', entryId)
+    const { error } = await supabase
+      .from('saved_calculations')
+      .delete()
+      .eq('id', entry.id)
+      .eq('user_id', currentUserId)
 
     if (error) {
       setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
       return
     }
 
-    setAuthMessage({ type: 'success', text: 'Zapis został usunięty.' })
+    setRenamingId(null)
+
+    if (activeCalculation?.id === entry.id) {
+      detachActiveCalculation()
+      setAuthMessage({
+        type: 'success',
+        text: 'Zapis został usunięty. Bieżąca kalkulacja nie jest już zapisana.',
+      })
+    } else {
+      setAuthMessage({ type: 'success', text: 'Zapis został usunięty.' })
+    }
+
+    await loadSavedCalculations(currentUserId)
+  }
+
+  const handleDeleteSavedCalculation = (entry: SavedCalculationEntry) =>
+    setConfirmRequest({
+      title: 'Usunąć zapis?',
+      message: `Zapis „${entry.name}” zostanie usunięty bezpowrotnie.`,
+      confirmLabel: 'Usuń',
+      onConfirm: () => void deleteSavedCalculation(entry),
+    })
+
+  const startRename = (entry: SavedCalculationEntry) => {
+    setRenamingId(entry.id)
+    setRenameValue(entry.name)
+  }
+
+  const submitRename = async (entry: SavedCalculationEntry) => {
+    const name = renameValue.trim()
+
+    if (!name) {
+      setAuthMessage({ type: 'error', text: 'Nazwa zapisu nie może być pusta.' })
+      return
+    }
+
+    if (name === entry.name) {
+      setRenamingId(null)
+      return
+    }
+
+    if (!supabase || !isSupabaseConfigured || !currentUserId) {
+      setAuthMessage({ type: 'error', text: 'Zaloguj się, aby zmienić nazwę zapisu.' })
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('saved_calculations')
+      .update({ name })
+      .eq('id', entry.id)
+      .eq('user_id', currentUserId)
+      .select('id')
+
+    if (error) {
+      setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+      return
+    }
+
+    if (!data || data.length === 0) {
+      setAuthMessage({ type: 'error', text: 'Nie znaleziono zapisu. Mogło go usunąć inne okno.' })
+      setRenamingId(null)
+      await loadSavedCalculations(currentUserId)
+      return
+    }
+
+    if (activeCalculation?.id === entry.id) {
+      setActiveCalculation({ id: entry.id, name })
+    }
+
+    setRenamingId(null)
+    setAuthMessage({ type: 'success', text: 'Zmieniono nazwę zapisu.' })
     await loadSavedCalculations(currentUserId)
   }
 
@@ -615,26 +890,7 @@ function App() {
     return monthNumber === 1 ? firstMonthFee + lifeInsuranceCost + propertyInsuranceCost : lifeInsuranceCost + propertyInsuranceCost
   }
 
-  const summary = useMemo(
-    () =>
-      calculateLoanSummary({
-        loanAmount: form.amount,
-        annualRate: form.rate,
-        termMonths: form.years * 12,
-        repaymentType: form.repaymentType,
-        loanStartDate: form.loanStartDate,
-        rateChanges: form.rateChanges.map(({ date, rate }) => ({ date, rate })),
-        extraMonthlyPayment: form.extraMonthlyPayment,
-        extraMonthlyPaymentStartDate: form.extraMonthlyPaymentStartDate,
-        extraPayments: form.extraPayments.map(({ amount, date, effect }) => ({
-          amount,
-          date,
-          effect,
-        })),
-        extraPaymentMode: form.extraPaymentMode,
-      }),
-    [form],
-  )
+  const summary = useMemo(() => calculateLoanSummary(buildLoanInput(form)), [form])
 
   const totalAdditionalCosts = useMemo(() => {
     return Array.from({ length: form.years * 12 }, (_, index) => {
@@ -649,7 +905,11 @@ function App() {
   const totalCost = summary.totalPaid + totalAdditionalCosts
   const monthlyBurden = summary.monthlyPayment + totalAdditionalCosts / Math.max(form.years * 12, 1)
 
-  const resetForm = () => setForm(initialForm)
+  const resetForm = () =>
+    discardChangesThen(
+      () => setForm(initialForm),
+      'Przywrócenie wartości domyślnych odrzuci niezapisane zmiany.',
+    )
 
   const addRateChange = () => {
     setForm((current) => ({
@@ -864,8 +1124,8 @@ function App() {
                   className="save-disk-button"
                   onClick={handleSaveCurrentCalculationClick}
                   aria-disabled={isSaveButtonInactive}
-                  title={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
-                  aria-label={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
+                  title={activeCalculation ? 'Zapisz zmiany' : 'Zapisz'}
+                  aria-label={activeCalculation ? 'Zapisz zmiany' : 'Zapisz'}
                 >
                   <svg
                     className="save-icon"
@@ -880,12 +1140,28 @@ function App() {
                   >
                     <path d="M12 4v11M7 10.5l5 5 5-5M4 19.5h16" />
                   </svg>
-                  {selectedSavedCalculationId ? (
-                    <span className="save-disk-label">
-                      {savedCalculationName || 'Zapisz zmiany'}
-                    </span>
-                  ) : null}
+                  <span className="save-disk-label">
+                    {activeCalculation ? 'Zapisz zmiany' : 'Zapisz'}
+                  </span>
                 </button>
+
+                {activeCalculation || hasUnsavedChanges ? (
+                  <span
+                    className={hasUnsavedChanges ? 'save-status is-dirty' : 'save-status'}
+                    role="status"
+                  >
+                    {activeCalculation ? (
+                      <strong className="save-status-name">{activeCalculation.name}</strong>
+                    ) : null}
+                    <span>
+                      {hasUnsavedChanges
+                        ? activeCalculation
+                          ? 'Niezapisane zmiany'
+                          : 'Niezapisana kalkulacja'
+                        : 'Zapisano'}
+                    </span>
+                  </span>
+                ) : null}
               </div>
 
               <div className="user-badge">
@@ -995,53 +1271,117 @@ function App() {
 
         {currentUserEmail && savedCalculationsExpanded ? (
           <div className="saved-calculations">
-            <div className="saved-toolbar">
+            <form
+              className="saved-toolbar"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void saveNewCalculation()
+              }}
+            >
               <input
+                ref={nameInputRef}
                 type="text"
-                value={savedCalculationName}
-                onChange={(event) => setSavedCalculationName(event.target.value)}
+                value={saveDraftName}
+                onChange={(event) => setSaveDraftName(event.target.value)}
                 placeholder="Nazwa kalkulacji"
+                aria-label="Nazwa kalkulacji"
               />
-              <button
-                type="button"
-                className="primary-button"
-                onClick={saveNewCalculation}
-                disabled={false}
-              >
-                Zapisz nową kalkulację
+              <button type="submit" className="primary-button">
+                {activeCalculation ? 'Zapisz jako kopię' : 'Zapisz nową kalkulację'}
               </button>
-            </div>
+              <button type="button" className="secondary-button" onClick={startNewCalculation}>
+                Nowa kalkulacja
+              </button>
+            </form>
+
+            {invalidSavedCount > 0 ? (
+              <p className="empty-state">
+                Nie udało się odczytać zapisów: {invalidSavedCount} (nieprawidłowy format danych).
+              </p>
+            ) : null}
 
             {savedCalculations.length === 0 ? (
               <p className="empty-state">Brak zapisanych kalkulacji. Zapisz bieżący scenariusz, aby wrócić do niego później.</p>
             ) : (
               <ul className="saved-list">
-                {savedCalculations.map((entry) => (
-                  <li key={entry.id} className="saved-item">
-                    <div className="saved-summary">
-                      <strong>{entry.name}</strong>
-                      <span>
-                        {entry.created_at
-                          ? `Ostatni zapis: ${new Date(entry.created_at).toLocaleString('pl-PL', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}`
-                          : 'Ostatni zapis: dziś'}
-                      </span>
-                    </div>
-                    <div className="saved-actions">
-                      <button type="button" className="secondary-button" onClick={() => handleLoadSavedCalculation(entry)}>
-                        Wczytaj
-                      </button>
-                      <button type="button" className="remove-button" onClick={() => handleDeleteSavedCalculation(entry.id)}>
-                        Usuń
-                      </button>
-                    </div>
-                  </li>
-                ))}
+                {savedCalculations.map((entry) => {
+                  const isActive = activeCalculation?.id === entry.id
+                  const entrySummary = savedCalculationSummaries.get(entry.id)
+
+                  return (
+                    <li
+                      key={entry.id}
+                      className={isActive ? 'saved-item is-active' : 'saved-item'}
+                      aria-current={isActive ? 'true' : undefined}
+                    >
+                      <div className="saved-summary">
+                        {renamingId === entry.id ? (
+                          <form
+                            className="rename-form"
+                            onSubmit={(event) => {
+                              event.preventDefault()
+                              void submitRename(entry)
+                            }}
+                          >
+                            <input
+                              type="text"
+                              value={renameValue}
+                              onChange={(event) => setRenameValue(event.target.value)}
+                              aria-label="Nowa nazwa zapisu"
+                              autoFocus
+                            />
+                            <button type="submit" className="secondary-button">
+                              Zapisz nazwę
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => setRenamingId(null)}
+                            >
+                              Anuluj
+                            </button>
+                          </form>
+                        ) : (
+                          <strong>
+                            {entry.name}
+                            {isActive ? <span className="saved-badge">Otwarta</span> : null}
+                          </strong>
+                        )}
+                        {entrySummary ? (
+                          <span>
+                            {formatCurrency(entrySummary.amount)} · {entrySummary.years} lat ·{' '}
+                            {formatPercent(entrySummary.rate)} · rata{' '}
+                            {formatCurrency(entrySummary.monthlyPayment)}
+                          </span>
+                        ) : null}
+                        <span>{getSavedDateLabel(entry)}</span>
+                      </div>
+                      <div className="saved-actions">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => handleLoadSavedCalculation(entry)}
+                        >
+                          Wczytaj
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => startRename(entry)}
+                        >
+                          Zmień nazwę
+                        </button>
+                        <button
+                          type="button"
+                          className="remove-button"
+                          onClick={() => handleDeleteSavedCalculation(entry)}
+                        >
+                          Usuń
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>
@@ -1701,6 +2041,17 @@ function App() {
         Rzeczywiste warunki kredytu ustala bank.
       </p>
     </footer>
+
+    {confirmRequest ? (
+      <ConfirmDialog
+        request={confirmRequest}
+        onCancel={() => setConfirmRequest(null)}
+        onConfirm={() => {
+          setConfirmRequest(null)
+          confirmRequest.onConfirm()
+        }}
+      />
+    ) : null}
     </>
   )
 }

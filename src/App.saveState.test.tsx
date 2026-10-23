@@ -1,8 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+
+configure({ asyncUtilTimeout: 5000 })
 
 const baseSavedPayload = {
   amount: 300000,
@@ -28,7 +30,15 @@ const savedRecord = {
   created_at: '2026-01-15T12:00:00Z',
 }
 
-const { mockSupabase } = vi.hoisted(() => ({
+const { mockSupabase, tableCalls } = vi.hoisted(() => ({
+  tableCalls: {
+    listResult: vi.fn(),
+    update: vi.fn(),
+    updateEq: vi.fn(),
+    updateResult: vi.fn(),
+    insert: vi.fn(),
+    deleteEq: vi.fn(),
+  },
   mockSupabase: {
     auth: {
       getSession: vi.fn(),
@@ -65,28 +75,51 @@ beforeEach(() => {
     },
   })
 
+  mockSupabase.auth.signOut.mockResolvedValue({ error: null })
+  tableCalls.listResult.mockResolvedValue({ data: [savedRecord], error: null })
+  tableCalls.updateResult.mockResolvedValue({ data: [{ id: 'saved-1' }], error: null })
+
   mockSupabase.from.mockImplementation(() => ({
     select: vi.fn().mockReturnValue({
       eq: vi.fn().mockReturnValue({
-        order: vi.fn().mockResolvedValue({ data: [savedRecord], error: null }),
+        order: vi.fn(() => tableCalls.listResult()),
       }),
     }),
-    eq: vi.fn().mockReturnValue({
-      order: vi.fn().mockResolvedValue({ data: [savedRecord], error: null }),
-    }),
-    order: vi.fn().mockResolvedValue({ data: [savedRecord], error: null }),
-    update: vi.fn().mockReturnValue({
-      eq: vi.fn().mockResolvedValue({ error: null }),
-    }),
-    insert: vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        single: vi.fn().mockResolvedValue({ data: { id: 'new-save-id' }, error: null }),
-      }),
-    }),
-    delete: vi.fn().mockReturnValue({
-      eq: vi.fn().mockResolvedValue({ error: null }),
+    update: (payload: unknown) => {
+      tableCalls.update(payload)
+      const chain = {
+        eq: (column: string, value: string) => {
+          tableCalls.updateEq(column, value)
+          return chain
+        },
+        select: () => tableCalls.updateResult(),
+      }
+      return chain
+    },
+    insert: (rows: unknown) => {
+      tableCalls.insert(rows)
+      return {
+        select: () => ({
+          single: () => Promise.resolve({ data: { id: 'new-save-id' }, error: null }),
+        }),
+      }
+    },
+    delete: () => ({
+      eq: (column: string, value: string) => {
+        tableCalls.deleteEq(column, value)
+        return {
+          eq: (nextColumn: string, nextValue: string) => {
+            tableCalls.deleteEq(nextColumn, nextValue)
+            return Promise.resolve({ error: null })
+          },
+        }
+      },
     }),
   }))
+})
+
+afterEach(() => {
+  cleanup()
 })
 
 describe('save button behavior', () => {
@@ -156,131 +189,294 @@ describe('save button behavior', () => {
     }
   })
 
-  it('is greyed out right after login and clicking it expands saved calculations', async () => {
+  const getSaveButton = () => document.querySelector('.save-disk-button') as HTMLButtonElement
+  const getSaveStatus = () => document.querySelector('.save-status')
+
+  const renderLoggedIn = async () => {
     render(<App />)
+    await screen.findByRole('button', { name: /Zapisane kalkulacje/ })
+  }
 
+  const openSavedPanel = async () => {
+    fireEvent.click(screen.getByRole('button', { name: /Zapisane kalkulacje/ }))
+    await screen.findByPlaceholderText('Nazwa kalkulacji')
+  }
+
+  const loadFirstSavedCalculation = async () => {
+    await openSavedPanel()
+    fireEvent.click(await screen.findByRole('button', { name: 'Wczytaj' }))
     await waitFor(() => {
-      expect(document.querySelector('.save-disk-button')).not.toBeNull()
+      expect(getSaveStatus()?.textContent).toContain('Moja kalkulacja')
     })
+  }
 
-    const saveButton = document.querySelector('.save-disk-button') as HTMLButtonElement
-    expect(saveButton.getAttribute('aria-disabled')).toBe('true')
+  const changeAmount = (value: string) => {
+    const amountInput = document.querySelector('input[type="number"]') as HTMLInputElement
+    fireEvent.change(amountInput, { target: { value } })
+    return amountInput
+  }
 
-    fireEvent.click(saveButton)
+  it('keeps the save button active right after login and clicking it opens the name field', async () => {
+    await renderLoggedIn()
+
+    expect(getSaveButton().getAttribute('aria-disabled')).toBe('false')
+    expect(getSaveButton().textContent).toContain('Zapisz')
+    expect(screen.queryByPlaceholderText('Nazwa kalkulacji')).toBeNull()
+
+    fireEvent.click(getSaveButton())
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText('Nazwa kalkulacji')).toBeTruthy()
     })
   })
 
-  it('stays inactive after loading a saved calculation and shows its name', async () => {
-    render(<App />)
+  it('stays inactive after loading a saved calculation, shows its name and collapses the list', async () => {
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+
+    expect(getSaveButton().getAttribute('aria-disabled')).toBe('true')
+    expect(getSaveStatus()?.textContent).toContain('Zapisano')
+    expect(screen.queryByPlaceholderText('Nazwa kalkulacji')).toBeNull()
+  })
+
+  it('shows unsaved changes and overwrites only the payload of the loaded calculation', async () => {
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+
+    changeAmount('400000')
+
+    expect(getSaveButton().getAttribute('aria-disabled')).toBe('false')
+    expect(getSaveStatus()?.textContent).toContain('Niezapisane zmiany')
+
+    fireEvent.click(getSaveButton())
 
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: 'Wczytaj' }).length).toBeGreaterThan(0)
+      expect(tableCalls.update).toHaveBeenCalledTimes(1)
     })
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Wczytaj' })[0])
+    const updatedValues = tableCalls.update.mock.calls[0][0] as Record<string, unknown>
+    expect(Object.keys(updatedValues)).toEqual(['payload'])
+    expect((updatedValues.payload as { amount: number }).amount).toBe(400000)
+    expect(tableCalls.updateEq).toHaveBeenCalledWith('id', 'saved-1')
+    expect(tableCalls.updateEq).toHaveBeenCalledWith('user_id', 'user-1')
 
     await waitFor(() => {
-      const saveButton = document.querySelector('.save-disk-button') as HTMLButtonElement
-      expect(saveButton.getAttribute('aria-disabled')).toBe('true')
-      expect(saveButton.textContent).toContain('Moja kalkulacja')
+      expect(getSaveStatus()?.textContent).toContain('Zapisano')
+      expect(getSaveButton().getAttribute('aria-disabled')).toBe('true')
     })
   })
 
-  it('becomes active after a field change and overwrites the loaded calculation', async () => {
-    render(<App />)
+  it('saves a new record with the typed name and marks it as the open calculation', async () => {
+    await renderLoggedIn()
+    fireEvent.click(getSaveButton())
 
-    await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: 'Wczytaj' }).length).toBeGreaterThan(0)
-    })
-
-    fireEvent.click(screen.getAllByRole('button', { name: 'Wczytaj' })[0])
-
-    await waitFor(() => {
-      expect((document.querySelector('.save-disk-button') as HTMLButtonElement).getAttribute('aria-disabled')).toBe('true')
-    })
-
-    const amountInput = document.querySelector('input[type="number"]') as HTMLInputElement
-    fireEvent.change(amountInput, { target: { value: '400000' } })
-
-    const saveButton = document.querySelector('.save-disk-button') as HTMLButtonElement
-    expect(saveButton.getAttribute('aria-disabled')).toBe('false')
-
-    fireEvent.click(saveButton)
-
-    await waitFor(() => {
-      expect(mockSupabase.from).toHaveBeenCalledWith('saved_calculations')
-    })
-  })
-
-  it('shows the save new calculation action when panel is expanded and saves a new record', async () => {
-    render(<App />)
-
-    const saveButton = document.querySelector('.save-disk-button') as HTMLButtonElement
-    fireEvent.click(saveButton)
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Zapisz nową kalkulację' })).toBeTruthy()
-    })
-
-    const nameInput = screen.getByPlaceholderText('Nazwa kalkulacji') as HTMLInputElement
+    const nameInput = (await screen.findByPlaceholderText('Nazwa kalkulacji')) as HTMLInputElement
     fireEvent.change(nameInput, { target: { value: 'Nowa kalkulacja' } })
-
     fireEvent.click(screen.getByRole('button', { name: 'Zapisz nową kalkulację' }))
 
     await waitFor(() => {
-      expect(mockSupabase.from).toHaveBeenCalledWith('saved_calculations')
+      expect(tableCalls.insert).toHaveBeenCalledTimes(1)
     })
 
-    expect((screen.getByPlaceholderText('Nazwa kalkulacji') as HTMLInputElement).value).toBe('')
+    const [row] = tableCalls.insert.mock.calls[0][0] as Array<{ name: string; user_id: string }>
+    expect(row.name).toBe('Nowa kalkulacja')
+    expect(row.user_id).toBe('user-1')
+
+    await waitFor(() => {
+      expect(nameInput.value).toBe('')
+      expect(getSaveStatus()?.textContent).toContain('Nowa kalkulacja')
+    })
   })
 
-  it('saves a fresh record while a previous saved calculation is loaded', async () => {
-    render(<App />)
+  it('saves a copy under a new name without touching the loaded record', async () => {
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+    await openSavedPanel()
+
+    fireEvent.change(screen.getByPlaceholderText('Nazwa kalkulacji'), {
+      target: { value: 'Kopia kalkulacji' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Zapisz jako kopię' }))
 
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: 'Wczytaj' }).length).toBeGreaterThan(0)
+      expect(tableCalls.insert).toHaveBeenCalledTimes(1)
     })
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Wczytaj' })[0])
-
-    const saveButton = document.querySelector('.save-disk-button') as HTMLButtonElement
-    fireEvent.click(saveButton)
-
+    expect(tableCalls.update).not.toHaveBeenCalled()
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Zapisz nową kalkulację' })).toBeTruthy()
+      expect(getSaveStatus()?.textContent).toContain('Kopia kalkulacji')
     })
-
-    const nameInput = screen.getByPlaceholderText('Nazwa kalkulacji') as HTMLInputElement
-    fireEvent.change(nameInput, { target: { value: 'Kopia kalkulacji' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Zapisz nową kalkulację' }))
-
-    await waitFor(() => {
-      expect(mockSupabase.from).toHaveBeenCalledWith('saved_calculations')
-    })
-
-    expect((screen.getByPlaceholderText('Nazwa kalkulacji') as HTMLInputElement).value).toBe('')
   })
 
-  it('keeps the loaded record name visible while creating a new save draft', async () => {
-    render(<App />)
+  it('asks for confirmation before loading a saved calculation over unsaved changes', async () => {
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+
+    const amountInput = changeAmount('400000')
+    await openSavedPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Wczytaj' }))
+
+    const dialog = await screen.findByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Anuluj' }))
+
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(amountInput.value).toBe('400000')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wczytaj' }))
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Odrzuć zmiany',
+      }),
+    )
 
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: 'Wczytaj' }).length).toBeGreaterThan(0)
+      expect(amountInput.value).toBe('300000')
     })
+  })
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Wczytaj' })[0])
+  it('does not ask for confirmation when nothing changed since loading', async () => {
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+    await openSavedPanel()
 
-    const saveButton = document.querySelector('.save-disk-button') as HTMLButtonElement
-    fireEvent.click(saveButton)
+    fireEvent.click(screen.getByRole('button', { name: 'Wczytaj' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Zapisz nową kalkulację' })).toBeTruthy()
+      expect(screen.queryByPlaceholderText('Nazwa kalkulacji')).toBeNull()
+    })
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('confirms before deleting and detaches the calculation when the open record is removed', async () => {
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+    await openSavedPanel()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Usuń' }))
+
+    const dialog = await screen.findByRole('alertdialog')
+    expect(tableCalls.deleteEq).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Usuń' }))
+
+    await waitFor(() => {
+      expect(tableCalls.deleteEq).toHaveBeenCalledWith('id', 'saved-1')
+      expect(tableCalls.deleteEq).toHaveBeenCalledWith('user_id', 'user-1')
     })
 
-    expect((saveButton).textContent).toContain('Moja kalkulacja')
+    await waitFor(() => {
+      expect(getSaveStatus()?.textContent).toContain('Niezapisana kalkulacja')
+    })
+    expect(getSaveStatus()?.textContent).not.toContain('Moja kalkulacja')
+    expect(getSaveButton().getAttribute('aria-disabled')).toBe('false')
+  })
+
+  it('renames a saved calculation without changing its data', async () => {
+    await renderLoggedIn()
+    await openSavedPanel()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Zmień nazwę' }))
+    fireEvent.change(screen.getByLabelText('Nowa nazwa zapisu'), {
+      target: { value: 'Mieszkanie na Woli' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Zapisz nazwę' }))
+
+    await waitFor(() => {
+      expect(tableCalls.update).toHaveBeenCalledWith({ name: 'Mieszkanie na Woli' })
+    })
+    expect(tableCalls.updateEq).toHaveBeenCalledWith('id', 'saved-1')
+    expect(tableCalls.updateEq).toHaveBeenCalledWith('user_id', 'user-1')
+  })
+
+  it('reports an error and detaches the calculation when the saved record no longer exists', async () => {
+    tableCalls.updateResult.mockResolvedValue({ data: [], error: null })
+
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+    changeAmount('400000')
+    fireEvent.click(getSaveButton())
+
+    expect(await screen.findByText(/Nie znaleziono zapisu/)).toBeTruthy()
+    await waitFor(() => {
+      expect(getSaveStatus()?.textContent).toContain('Niezapisana kalkulacja')
+    })
+    expect(getSaveStatus()?.textContent).not.toContain('Moja kalkulacja')
+  })
+
+  it('warns before logging out with unsaved changes', async () => {
+    await renderLoggedIn()
+    changeAmount('400000')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wyloguj' }))
+
+    const dialog = await screen.findByRole('alertdialog')
+    expect(mockSupabase.auth.signOut).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Anuluj' }))
+    expect(mockSupabase.auth.signOut).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wyloguj' }))
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Odrzuć zmiany',
+      }),
+    )
+
+    await waitFor(() => {
+      expect(mockSupabase.auth.signOut).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('warns before closing the tab only when a logged-in user has unsaved changes', async () => {
+    await renderLoggedIn()
+
+    const cleanEvent = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanEvent)
+    expect(cleanEvent.defaultPrevented).toBe(false)
+
+    changeAmount('400000')
+
+    const dirtyEvent = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyEvent)
+    expect(dirtyEvent.defaultPrevented).toBe(true)
+  })
+
+  it('shows the key parameters of each saved calculation', async () => {
+    await renderLoggedIn()
+    await openSavedPanel()
+
+    const item = (await screen.findByRole('button', { name: 'Wczytaj' })).closest('li') as HTMLElement
+
+    expect(item.textContent).toMatch(/300.000,00.zł/)
+    expect(item.textContent).toContain('25 lat')
+    expect(item.textContent).toContain('5,2%')
+    expect(item.textContent).toMatch(/rata\s+\d/)
+    expect(item.textContent).toContain('Utworzono:')
+  })
+
+  it('uses a stable start date derived from creation time for legacy saved calculations', async () => {
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+
+    const month = screen.getAllByRole('combobox', { name: 'Miesiąc' })[0] as HTMLSelectElement
+    const year = screen.getAllByRole('combobox', { name: 'Rok' })[0] as HTMLSelectElement
+
+    // The record was created 2026-01-15, so the legacy schedule starts the next month
+    expect(month.value).toBe('2')
+    expect(year.value).toBe('2026')
+  })
+
+  it('tells the user when a saved calculation cannot be read', async () => {
+    tableCalls.listResult.mockResolvedValue({
+      data: [savedRecord, { id: 'broken', name: 'Uszkodzony', payload: {}, created_at: '2026-01-15T12:00:00Z' }],
+      error: null,
+    })
+
+    await renderLoggedIn()
+    await openSavedPanel()
+
+    expect(await screen.findByText(/Nie udało się odczytać zapisów: 1/)).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: 'Wczytaj' })).toHaveLength(1)
   })
 })
 

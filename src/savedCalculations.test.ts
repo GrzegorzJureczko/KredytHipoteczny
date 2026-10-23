@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeSavedCalculationPayload, type SavedCalculationPayload } from './savedCalculations'
+import {
+  getLegacyLoanStartDate,
+  normalizeSavedCalculationPayload,
+  type SavedCalculationPayload,
+} from './savedCalculations'
 
 describe('normalizeSavedCalculationPayload', () => {
   it('accepts a valid saved payload and keeps the data shape', () => {
@@ -32,6 +36,33 @@ describe('normalizeSavedCalculationPayload', () => {
 
   it('rejects a payload without required fields', () => {
     expect(normalizeSavedCalculationPayload({ amount: 1000 })).toBeNull()
+  })
+
+  it('fills a missing start date with the supplied legacy date and never overrides a stored one', () => {
+    const legacyRecord = {
+      amount: 300000,
+      rate: 5.1,
+      years: 25,
+      repaymentType: 'annuity',
+      rateChanges: [],
+      extraMonthlyPayment: 0,
+      extraMonthlyPaymentStartDate: '2027-02-01',
+      extraPaymentMode: 'reduceTerm',
+      extraPayments: [],
+      applicationFee: 0,
+      notary: 0,
+      appraisal: 0,
+      commission: 0,
+    }
+
+    expect(normalizeSavedCalculationPayload(legacyRecord)?.loanStartDate).toBeUndefined()
+    expect(normalizeSavedCalculationPayload(legacyRecord, '2026-02-01')?.loanStartDate).toBe(
+      '2026-02-01',
+    )
+    expect(
+      normalizeSavedCalculationPayload({ ...legacyRecord, loanStartDate: '2029-07-01' }, '2026-02-01')
+        ?.loanStartDate,
+    ).toBe('2029-07-01')
   })
 
   it('normalizes legacy values and coerces invalid enums to safe defaults', () => {
@@ -77,5 +108,17 @@ describe('normalizeSavedCalculationPayload', () => {
       date: '2027-04-01',
       effect: 'reduceInstallment',
     })
+  })
+})
+
+describe('getLegacyLoanStartDate', () => {
+  it('returns the first day of the month after creation', () => {
+    expect(getLegacyLoanStartDate('2026-01-15T12:00:00')).toBe('2026-02-01')
+    expect(getLegacyLoanStartDate('2026-12-31T12:00:00')).toBe('2027-01-01')
+  })
+
+  it('returns undefined for a missing or invalid creation time', () => {
+    expect(getLegacyLoanStartDate()).toBeUndefined()
+    expect(getLegacyLoanStartDate('not-a-date')).toBeUndefined()
   })
 })

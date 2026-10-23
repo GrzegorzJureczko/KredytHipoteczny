@@ -29,8 +29,24 @@ export type SavedCalculationPayload = {
   propertyInsuranceAmount?: number
 }
 
+export const getLegacyLoanStartDate = (createdAt?: string) => {
+  if (!createdAt) {
+    return undefined
+  }
+
+  const created = new Date(createdAt)
+
+  if (Number.isNaN(created.getTime())) {
+    return undefined
+  }
+
+  const start = new Date(created.getFullYear(), created.getMonth() + 1, 1)
+  return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`
+}
+
 export const normalizeSavedCalculationPayload = (
   value: unknown,
+  legacyLoanStartDate?: string,
 ): SavedCalculationPayload | null => {
   if (!value || typeof value !== 'object') {
     return null
@@ -104,6 +120,8 @@ export const normalizeSavedCalculationPayload = (
 
   if ('loanStartDate' in record) {
     payload.loanStartDate = String(record.loanStartDate ?? '')
+  } else if (legacyLoanStartDate) {
+    payload.loanStartDate = legacyLoanStartDate
   }
 
   if ('lifeInsuranceCalculationType' in record) {
