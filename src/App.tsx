@@ -819,6 +819,31 @@ function App() {
   }
 
   return (
+    <>
+    <nav className="site-nav" aria-label="Nawigacja główna">
+      <span className="site-nav-brand">Kredyt hipoteczny</span>
+      <div className="site-nav-links">
+        <a href="#dane-podstawowe">Dane</a>
+        <a href="#podsumowanie">Podsumowanie</a>
+        <a href="#harmonogram">Harmonogram</a>
+      </div>
+    </nav>
+
+    <header className="hero">
+      <div className="hero-inner">
+        <p className="eyebrow">Pełna kontrola nad kosztem kredytu</p>
+        <h1>Porównaj realny koszt kredytu hipotecznego</h1>
+        <div className="hero-actions">
+          <a className="hero-button hero-button-primary" href="#dane-podstawowe">
+            Oblicz ratę
+          </a>
+          <button type="button" className="hero-button" onClick={resetForm}>
+            Przywróć domyślne
+          </button>
+        </div>
+      </div>
+    </header>
+
     <div className="page-shell">
       <section className="panel auth-panel">
         {currentUserEmail ? (
@@ -1012,18 +1037,8 @@ function App() {
         ) : null}
       </section>
 
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Kalkulator kredytowy</p>
-          <h1>Porównaj realny koszt kredytu hipotecznego</h1>
-        </div>
-        <button type="button" className="reset-button" onClick={resetForm}>
-          Przywróć domyślne
-        </button>
-      </header>
-
       <main className="app-grid">
-        <section className="panel form-panel">
+        <section className="panel form-panel" id="dane-podstawowe">
           <h2>Dane podstawowe</h2>
 
           <div className="field-grid">
@@ -1551,7 +1566,7 @@ function App() {
 
         </section>
 
-        <aside className="panel summary-panel">
+        <aside className="panel summary-panel" id="podsumowanie">
           <h2>Podsumowanie</h2>
 
           <div className="summary-cards">
@@ -1598,7 +1613,7 @@ function App() {
         </aside>
       </main>
 
-      <section className="panel schedule-panel">
+      <section className="panel schedule-panel" id="harmonogram">
         <div className="section-header">
           <h2>Harmonogram spłat</h2>
           <span>po latach</span>
@@ -1668,6 +1683,14 @@ function App() {
         </div>
       </section>
     </div>
+
+    <footer className="site-footer">
+      <p>
+        Wyniki mają charakter orientacyjny i nie stanowią oferty w rozumieniu Kodeksu Cywilnego.
+        Rzeczywiste warunki kredytu ustala bank.
+      </p>
+    </footer>
+    </>
   )
 }
 

@@ -2,12 +2,23 @@
   font-family: Inter, 'Segoe UI', sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #e2e8f0;
-  background: linear-gradient(180deg, #020817 0%, #0f172a 100%);
+  color: #101010;
+  background: #f2f2f2;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --brand-red: #910a2d;
+  --brand-red-strong: #6f0722;
+  --brand-red-soft: rgba(230, 61, 45, 0.12);
+  --bg-deep: #f8f8f8;
+  --bg-panel: rgba(255, 255, 255, 0.94);
+  --bg-panel-strong: rgba(255, 255, 255, 1);
+  --bg-soft: rgba(244, 246, 249, 0.98);
+  --line: rgba(17, 24, 39, 0.08);
+  --text: #101828;
+  --muted: #5b6472;
+  --shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
 }
 
 * {
@@ -15,14 +26,16 @@
 }
 
 html {
-  background: #020817;
+  background: #f2f2f2;
+  scroll-behavior: smooth;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: radial-gradient(circle at top, rgba(59, 130, 246, 0.15), transparent 35%), #020817;
+  background: #f2f2f2;
+  color: var(--text);
 }
 
 #root {
@@ -44,4 +57,8 @@ h2,
 h3,
 p {
   margin-top: 0;
+}
+
+::selection {
+  background: rgba(230, 61, 45, 0.18);
 }
