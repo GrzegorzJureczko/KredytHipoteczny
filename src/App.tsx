@@ -867,7 +867,19 @@ function App() {
                   title={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
                   aria-label={selectedSavedCalculationId ? 'Zapisz zmiany' : 'Zapisz'}
                 >
-                  <span aria-hidden="true">💾</span>
+                  <svg
+                    className="save-icon"
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="square"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 4v11M7 10.5l5 5 5-5M4 19.5h16" />
+                  </svg>
                   {selectedSavedCalculationId ? (
                     <span className="save-disk-label">
                       {savedCalculationName || 'Zapisz zmiany'}

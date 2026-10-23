@@ -1056,6 +1056,26 @@ select:focus {
   background: #101010;
 }
 
+.saved-toggle-button,
+.save-disk-button {
+  box-sizing: border-box;
+  height: 44px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.save-disk-button {
+  min-width: 44px;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.save-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
+
 .secondary-button,
 .remove-button,
 .reset-button,
