@@ -683,20 +683,6 @@ select:focus {
   gap: 6px;
 }
 
-.note-box {
-  margin-top: 18px;
-  background: linear-gradient(135deg, rgba(230, 61, 45, 0.04), rgba(255, 255, 255, 0.8));
-  border: 1px solid rgba(230, 61, 45, 0.18);
-  border-radius: 16px;
-  padding: 16px;
-}
-
-.note-box p {
-  margin: 0;
-  line-height: 1.6;
-  color: var(--text);
-}
-
 .section-header {
   display: flex;
   align-items: center;
@@ -1213,17 +1199,6 @@ select:focus {
   font-size: 1.8rem;
   font-weight: 300;
   line-height: 1.2;
-}
-
-.note-box {
-  border-radius: 0;
-  border: none;
-  border-left: 4px solid var(--brand-red);
-  background: #f7f7f7;
-}
-
-.note-box p {
-  color: #333;
 }
 
 .section-header span {

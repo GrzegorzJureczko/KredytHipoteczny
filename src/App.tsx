@@ -1953,14 +1953,6 @@ function App() {
               <strong>{summary.loanTermMonths} mies.</strong>
             </div>
           </div>
-
-          <div className="note-box">
-            <p>
-              W praktyce realny koszt zobowiązania często jest wyższy niż sama rata. Dodanie
-              opłat okołokredytowych pozwala lepiej porównać oferty banków i zidentyfikować
-              ukryte różnice między propozycjami.
-            </p>
-          </div>
         </aside>
       </main>
 
