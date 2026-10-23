@@ -1268,13 +1268,6 @@ tbody tr:hover {
 }
 
 .auth-message {
-  position: absolute;
-  top: 2px;
-  left: 0;
-  max-width: min(100%, 640px);
-  max-height: none;
-  margin: 0;
-  padding: 5px 12px;
   border-radius: 0;
   border: 1px solid #101010;
   border-left-width: 4px;
@@ -1283,22 +1276,6 @@ tbody tr:hover {
   font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.04em;
-  transform: none;
-  transition: opacity 1.2s ease;
-}
-
-.auth-message-slot {
-  position: relative;
-  z-index: 5;
-  height: 0;
-}
-
-.auth-message-slot + .saved-calculations {
-  margin-top: 44px;
-}
-
-.auth-panel {
-  padding-bottom: 40px;
 }
 
 .auth-message.success {

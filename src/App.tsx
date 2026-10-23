@@ -388,7 +388,7 @@ function App() {
       setIsAuthMessageVisible(false)
       clearMessageTimeout = window.setTimeout(() => {
         setAuthMessage((current) => ({ ...current, text: '' }))
-      }, 1200)
+      }, 350)
     }, visibleDuration)
 
     return () => {
@@ -1252,16 +1252,21 @@ function App() {
         )}
 
         {authMessage.text || isAuthMessageVisible ? (
-          <div className="auth-message-slot">
-            <p
-              className={
-                authMessage.type === 'success' ? 'auth-message success' : 'auth-message error'
-              }
-              style={{ opacity: isAuthMessageVisible ? 1 : 0 }}
-            >
-              {authMessage.text}
-            </p>
-          </div>
+          <p
+            className={
+              authMessage.type === 'success' ? 'auth-message success' : 'auth-message error'
+            }
+            style={{
+              opacity: isAuthMessageVisible ? 1 : 0,
+              transform: isAuthMessageVisible ? 'translateY(0)' : 'translateY(-6px)',
+              maxHeight: isAuthMessageVisible ? '240px' : '0px',
+              marginTop: isAuthMessageVisible ? '14px' : '0px',
+              paddingTop: isAuthMessageVisible ? '10px' : '0px',
+              paddingBottom: isAuthMessageVisible ? '10px' : '0px',
+            }}
+          >
+            {authMessage.text}
+          </p>
         ) : null}
 
         {currentUserEmail && savedCalculationsExpanded ? (
