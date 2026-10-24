@@ -48,6 +48,8 @@ type FormState = {
   extraPaymentMode: ExtraPaymentMode
   extraPayments: ExtraPaymentEntry[]
   applicationFee: number
+  applicationFeeCalculationType: 'percentage' | 'amount'
+  applicationFeePercent: number
   insurance: number
   notary: number
   appraisal: number
@@ -111,6 +113,8 @@ const initialForm: FormState = {
   extraPaymentMode: 'reduceTerm',
   extraPayments: [],
   applicationFee: 1500,
+  applicationFeeCalculationType: 'amount',
+  applicationFeePercent: 0.43,
   insurance: 200,
   notary: 3500,
   appraisal: 1800,
@@ -193,13 +197,75 @@ const MonthYearInput = ({
   )
 }
 
-const FieldTooltip = ({ id, text }: { id: string; text: string }) => (
-  <span className="field-tooltip-trigger" tabIndex={0} aria-describedby={id} aria-label={text}>
-    <span aria-hidden="true">i</span>
-    <span className="field-tooltip" id={id} role="tooltip">
-      {text}
+const FieldTooltip = ({ id, text }: { id: string; text: string }) => {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLSpanElement>(null)
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    const closeOnOutsideTap = (event: PointerEvent) => {
+      if (!triggerRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsideTap)
+    return () => document.removeEventListener('pointerdown', closeOnOutsideTap)
+  }, [open])
+
+  return (
+    <span
+      ref={triggerRef}
+      className={open ? 'field-tooltip-trigger is-open' : 'field-tooltip-trigger'}
+      role="button"
+      tabIndex={0}
+      aria-describedby={id}
+      aria-expanded={open}
+      aria-label={text}
+      onClick={(event) => {
+        event.preventDefault()
+        setOpen((value) => !value)
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          setOpen(false)
+        }
+      }}
+    >
+      <span aria-hidden="true">i</span>
+      <span className="field-tooltip" id={id} role="tooltip">
+        {text}
+      </span>
     </span>
-  </span>
+  )
+}
+
+const SegmentedControl = <T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: T
+  options: ReadonlyArray<{ value: T; label: string }>
+  onChange: (value: T) => void
+}) => (
+  <div className="segmented-control" role="group" aria-label={label}>
+    {options.map((option) => (
+      <button
+        key={option.value}
+        type="button"
+        aria-pressed={value === option.value}
+        onClick={() => onChange(option.value)}
+      >
+        {option.label}
+      </button>
+    ))}
+  </div>
 )
 
 const groupDigits = (digits: string) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
@@ -249,6 +315,11 @@ const formatDuration = (months: number) => {
 
   return parts.join(' ')
 }
+
+const calculationTypeOptions = [
+  { value: 'amount', label: 'Kwotowo' },
+  { value: 'percentage', label: 'Procentowo' },
+] as const
 
 type UnitInputProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -1008,13 +1079,18 @@ function App() {
       : annualPremium
   }
 
+  const getApplicationFee = (currentForm: FormState) =>
+    currentForm.applicationFeeCalculationType === 'percentage'
+      ? Math.max(0, currentForm.amount * ((Number(currentForm.applicationFeePercent) || 0) / 100))
+      : currentForm.applicationFee
+
   const getMonthlyAdditionalCost = (
     monthNumber: number,
     currentForm: FormState,
     balance?: number,
   ) => {
     const firstMonthFee =
-      currentForm.applicationFee +
+      getApplicationFee(currentForm) +
       currentForm.notary +
       currentForm.appraisal +
       currentForm.commission
@@ -1064,7 +1140,42 @@ function App() {
     form.propertyValue > 0 && form.amount > form.propertyValue
       ? 'Kwota kredytu przekracza wartość nieruchomości.'
       : null,
+    form.years < 1 || form.years > 40
+      ? 'Okres kredytowania powinien mieścić się w zakresie 1–40 lat.'
+      : null,
   ].filter((message): message is string => message !== null)
+
+  const ltvPercent =
+    form.propertyValue > 0 && form.amount > 0 ? (form.amount / form.propertyValue) * 100 : null
+  const ownContribution = Math.max(0, form.propertyValue - form.amount)
+
+  const toMonthIndex = (value: string) => {
+    const { year, month } = getMonthYearParts(value)
+    return year * 12 + month
+  }
+  const loanStartIndex = toMonthIndex(form.loanStartDate)
+  const loanEndIndex = loanStartIndex + Math.max(summary.loanTermMonths, 1) - 1
+  const sortedRateChanges = [...form.rateChanges].sort(
+    (a, b) => toMonthIndex(a.date) - toMonthIndex(b.date),
+  )
+
+  const getRateChangeWarning = (entry: RateChangeEntry) => {
+    const monthIndex = toMonthIndex(entry.date)
+
+    if (monthIndex > loanEndIndex) {
+      return 'Zmiana po zako\u0144czeniu sp\u0142aty \u2013 nie wp\u0142ywa na harmonogram.'
+    }
+
+    if (sortedRateChanges.filter((other) => toMonthIndex(other.date) === monthIndex).length > 1) {
+      return 'Kilka zmian w tym samym miesi\u0105cu \u2013 obowi\u0105zuje ostatnia z listy.'
+    }
+
+    if (monthIndex < loanStartIndex) {
+      return 'Zmiana sprzed startu kredytu obowi\u0105zuje ju\u017c od pierwszej raty.'
+    }
+
+    return null
+  }
 
   const oneTimeOverpaymentCount = form.extraPayments.length
   const overpaymentBadgeParts = [
@@ -1233,6 +1344,31 @@ function App() {
         lifeInsuranceDurationUnit: unit,
         lifeInsuranceMonths: converted,
       }
+    })
+  }
+
+  const handleApplicationFeeCalculationTypeChange = (
+    calculationType: 'percentage' | 'amount',
+  ) => {
+    setForm((current) => {
+      if (current.applicationFeeCalculationType === calculationType) {
+        return current
+      }
+
+      return calculationType === 'amount'
+        ? {
+            ...current,
+            applicationFeeCalculationType: calculationType,
+            applicationFee: Number(getApplicationFee(current).toFixed(2)),
+          }
+        : {
+            ...current,
+            applicationFeeCalculationType: calculationType,
+            applicationFeePercent:
+              current.amount > 0
+                ? Number(((current.applicationFee / current.amount) * 100).toFixed(4))
+                : 0,
+          }
     })
   }
 
@@ -1543,7 +1679,7 @@ function App() {
                         )}
                         {entrySummary ? (
                           <span>
-                            {formatCurrency(entrySummary.amount)} · {entrySummary.years} lat ·{' '}
+                            {formatCurrency(entrySummary.amount)} · {entrySummary.years} {pluralize(entrySummary.years, 'rok', 'lata', 'lat')} ·{' '}
                             {formatPercent(entrySummary.rate)} · rata{' '}
                             {formatCurrency(entrySummary.monthlyPayment)}
                           </span>
@@ -1620,6 +1756,20 @@ function App() {
               </div>
             ) : null}
 
+            {ltvPercent !== null ? (
+              <p className={ltvPercent > 80 ? 'loan-ltv is-high full-width' : 'loan-ltv full-width'}>
+                <span>
+                  LTV <strong>{formatPercent(ltvPercent)}</strong>
+                </span>
+                {ownContribution > 0 ? (
+                  <span>
+                    Własny wkład <strong>{formatCurrency(ownContribution)}</strong>
+                  </span>
+                ) : null}
+                {ltvPercent > 80 ? <span>Wysokie LTV</span> : null}
+              </p>
+            ) : null}
+
             <label>
               <span className="field-title">
                 Data startu kredytu
@@ -1682,16 +1832,14 @@ function App() {
                   Okres kredytowania
                   <FieldTooltip id="loan-term-help" text="Na ile lat rozciągasz spłatę" />
                 </span>
-                <select
+                <UnitInput
+                  unit="lat"
+                  min="1"
+                  max="40"
+                  step="1"
                   value={form.years}
-                  onChange={(event) => updateField('years', Number(event.target.value))}
-                >
-                  {[5, 10, 15, 20, 25, 30, 35, 40].map((year) => (
-                    <option key={year} value={year}>
-                      {year} lat
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={(value) => updateField('years', value)}
+                />
               </label>
 
               <label>
@@ -1705,12 +1853,16 @@ function App() {
                     updateField('repaymentType', event.target.value as RepaymentType)
                   }
                 >
-                  <option value="annuity">Równe</option>
-                  <option value="decreasing">Malejące</option>
+                  <option value="annuity">Raty równe (annuitetowe)</option>
+                  <option value="decreasing">Raty malejące</option>
                 </select>
               </label>
             </div>
           </div>
+
+          <p className="form-section-label">
+            Dodatkowe parametry <span>opcjonalne</span>
+          </p>
 
           <details className="subsection collapsible-section">
             <summary>
@@ -1718,16 +1870,54 @@ function App() {
               <span className="section-badge">Łącznie {formatCurrency(totalAdditionalCosts)}</span>
             </summary>
             <div className="field-grid compact">
-              <label>
+              <div className="field-group full-width">
                 <span>Prowizja</span>
-                <UnitInput
-                  unit="zł"
-                  min="0"
-                  step="100"
-                  value={form.applicationFee}
-                  onValueChange={(value) => updateField('applicationFee', value)}
+                <SegmentedControl
+                  label="Sposób naliczania prowizji"
+                  value={form.applicationFeeCalculationType}
+                  options={calculationTypeOptions}
+                  onChange={handleApplicationFeeCalculationTypeChange}
                 />
-              </label>
+              </div>
+
+              {form.applicationFeeCalculationType === 'percentage' ? (
+                <>
+                  <label>
+                    <span>Stawka prowizji</span>
+                    <UnitInput
+                      unit="%"
+                      aria-label="Stawka prowizji"
+                      min="0"
+                      step="0.01"
+                      value={form.applicationFeePercent}
+                      onValueChange={(value) => updateField('applicationFeePercent', value)}
+                    />
+                  </label>
+
+                  <label>
+                    <span>Kwota prowizji</span>
+                    <UnitInput
+                      unit="zł"
+                      aria-label="Kwota prowizji"
+                      value={Number(getApplicationFee(form).toFixed(2))}
+                      readOnly
+                      aria-readonly="true"
+                    />
+                  </label>
+                </>
+              ) : (
+                <label>
+                  <span>Kwota prowizji</span>
+                  <UnitInput
+                    unit="zł"
+                    aria-label="Kwota prowizji"
+                    min="0"
+                    step="100"
+                    value={form.applicationFee}
+                    onValueChange={(value) => updateField('applicationFee', value)}
+                  />
+                </label>
+              )}
 
               <label>
                 <span>Notariusz / dokumenty</span>
@@ -1766,21 +1956,15 @@ function App() {
             <div className="insurance-block">
               <h4>Ubezpieczenie na życie</h4>
               <div className="field-grid compact">
-                <label className="full-width">
+                <div className="field-group full-width">
                   <span>Sposób naliczania</span>
-                  <select
-                    aria-label="Sposób naliczania ubezpieczenia na życie"
+                  <SegmentedControl
+                    label="Sposób naliczania ubezpieczenia na życie"
                     value={form.lifeInsuranceCalculationType}
-                    onChange={(event) =>
-                      handleLifeInsuranceCalculationTypeChange(
-                        event.target.value as 'percentage' | 'amount',
-                      )
-                    }
-                  >
-                    <option value="amount">Kwotowo</option>
-                    <option value="percentage">Procentowo</option>
-                  </select>
-                </label>
+                    options={calculationTypeOptions}
+                    onChange={handleLifeInsuranceCalculationTypeChange}
+                  />
+                </div>
 
                 {form.lifeInsuranceCalculationType === 'percentage' ? (
                   <>
@@ -1808,6 +1992,11 @@ function App() {
                         aria-readonly="true"
                       />
                     </label>
+
+                    <p className="field-note full-width">
+                      Stawka miesięczna liczona od aktualnego salda kredytu. Wyświetlona składka
+                      dotyczy pierwszego miesiąca.
+                    </p>
                   </>
                 ) : (
                   <label>
@@ -1854,21 +2043,15 @@ function App() {
             <div className="insurance-block">
               <h4>Ubezpieczenie nieruchomości</h4>
               <div className="field-grid compact">
-                <label className="full-width">
+                <div className="field-group full-width">
                   <span>Sposób naliczania</span>
-                  <select
-                    aria-label="Sposób naliczania ubezpieczenia nieruchomości"
+                  <SegmentedControl
+                    label="Sposób naliczania ubezpieczenia nieruchomości"
                     value={form.propertyInsuranceCalculationType}
-                    onChange={(event) =>
-                      handlePropertyInsuranceCalculationTypeChange(
-                        event.target.value as 'percentage' | 'amount',
-                      )
-                    }
-                  >
-                    <option value="percentage">Procentowo</option>
-                    <option value="amount">Kwotowo</option>
-                  </select>
-                </label>
+                    options={calculationTypeOptions}
+                    onChange={handlePropertyInsuranceCalculationTypeChange}
+                  />
+                </div>
 
                 {form.propertyInsuranceCalculationType === 'percentage' ? (
                   <>
@@ -1885,10 +2068,10 @@ function App() {
                     </label>
 
                     <label>
-                      <span>Suma ubezpieczenia</span>
+                      <span>Składka miesięczna</span>
                       <UnitInput
                         unit="zł"
-                        aria-label="Suma ubezpieczenia nieruchomości"
+                        aria-label="Składka ubezpieczenia nieruchomości"
                         min="0"
                         step="0.01"
                         value={Number(getPropertyInsuranceMonthlyPremium(form).toFixed(2))}
@@ -1927,10 +2110,10 @@ function App() {
                 ) : (
                   <>
                     <label>
-                      <span>Suma ubezpieczenia</span>
+                      <span>Składka</span>
                       <UnitInput
                         unit="zł"
-                        aria-label="Suma ubezpieczenia nieruchomości"
+                        aria-label="Składka ubezpieczenia nieruchomości"
                         min="0"
                         step="0.01"
                         value={form.propertyInsuranceAmount}
@@ -1967,8 +2150,7 @@ function App() {
               </span>
             </summary>
             <div className="extra-payment-list">
-              <div className="extra-payment-header">
-                <h4>Daty zmiany stopy</h4>
+              <div className="extra-payment-header is-end">
                 <button type="button" className="secondary-button" onClick={addRateChange}>
                   + Dodaj zmianę
                 </button>
@@ -1977,34 +2159,42 @@ function App() {
               {form.rateChanges.length === 0 ? (
                 <p className="empty-state">Brak zmian oprocentowania. Dodaj datę i nową stopę, aby zmienić odsetki od wybranego momentu.</p>
               ) : (
-                form.rateChanges.map((entry) => (
-                  <div key={entry.id} className="extra-payment-row">
-                    <label>
-                      <span>Nowe oprocentowanie</span>
-                      <UnitInput
-                        unit="%"
-                        min="0"
-                        step="0.1"
-                        value={entry.rate}
-                        onValueChange={(value) => updateRateChange(entry.id, 'rate', value)}
-                      />
-                    </label>
-                    <label>
-                      <span>Data zmiany</span>
-                      <MonthYearInput
-                        value={entry.date}
-                        onChange={(value) => updateRateChange(entry.id, 'date', value)}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="remove-button"
-                      onClick={() => removeRateChange(entry.id)}
-                    >
-                      Usuń
-                    </button>
-                  </div>
-                ))
+                sortedRateChanges.map((entry) => {
+                  const warning = getRateChangeWarning(entry)
+
+                  return (
+                    <div key={entry.id} className="row-with-note">
+                      <div className="extra-payment-row">
+                        <label>
+                          <span>Nowe oprocentowanie</span>
+                          <UnitInput
+                            unit="%"
+                            min="0"
+                            step="0.1"
+                            value={entry.rate}
+                            onValueChange={(value) => updateRateChange(entry.id, 'rate', value)}
+                          />
+                        </label>
+                        <label>
+                          <span>Data zmiany</span>
+                          <MonthYearInput
+                            value={entry.date}
+                            onChange={(value) => updateRateChange(entry.id, 'date', value)}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="remove-button icon-button"
+                          aria-label="Usuń zmianę oprocentowania"
+                          onClick={() => removeRateChange(entry.id)}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {warning ? <p className="row-note">{warning}</p> : null}
+                    </div>
+                  )
+                })
               )}
             </div>
           </details>
@@ -2042,7 +2232,7 @@ function App() {
 
               <label>
                 <span className="field-title">
-                  Efekt nadpłaty
+                  Efekt regularnej nadpłaty
                   <FieldTooltip id="overpayment-effect-help" text="Co ma się zmienić po dodatkowej wpłacie" />
                 </span>
                 <select
@@ -2054,6 +2244,11 @@ function App() {
                   <option value="reduceTerm">Skrócenie okresu</option>
                   <option value="reduceInstallment">Obniżenie raty</option>
                 </select>
+                <small className="field-note">
+                  {form.extraPaymentMode === 'reduceTerm'
+                    ? 'Rata zostaje bez zmian, a nadpłata skraca okres spłaty.'
+                    : 'Rata jest przeliczana po każdej nadpłacie dla pozostałego okresu.'}
+                </small>
               </label>
             </div>
 
@@ -2105,10 +2300,11 @@ function App() {
                     </label>
                     <button
                       type="button"
-                      className="remove-button"
+                      className="remove-button icon-button"
+                      aria-label="Usuń nadpłatę"
                       onClick={() => removeExtraPayment(payment.id)}
                     >
-                      Usuń
+                      ×
                     </button>
                   </div>
                 ))

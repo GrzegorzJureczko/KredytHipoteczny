@@ -12,6 +12,8 @@ export type SavedCalculationPayload = {
   extraPaymentMode: 'reduceTerm' | 'reduceInstallment'
   extraPayments: Array<{ id: number; amount: number; date: string; effect: 'reduceTerm' | 'reduceInstallment' }>
   applicationFee: number
+  applicationFeeCalculationType?: 'percentage' | 'amount'
+  applicationFeePercent?: number
   insurance: number
   notary: number
   appraisal: number
@@ -122,6 +124,15 @@ export const normalizeSavedCalculationPayload = (
     payload.loanStartDate = String(record.loanStartDate ?? '')
   } else if (legacyLoanStartDate) {
     payload.loanStartDate = legacyLoanStartDate
+  }
+
+  if ('applicationFeeCalculationType' in record) {
+    payload.applicationFeeCalculationType =
+      record.applicationFeeCalculationType === 'percentage' ? 'percentage' : 'amount'
+  }
+
+  if ('applicationFeePercent' in record) {
+    payload.applicationFeePercent = Number(record.applicationFeePercent ?? 0)
   }
 
   if ('lifeInsuranceCalculationType' in record) {

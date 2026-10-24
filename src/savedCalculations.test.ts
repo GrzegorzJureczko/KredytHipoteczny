@@ -56,6 +56,7 @@ describe('normalizeSavedCalculationPayload', () => {
     }
 
     expect(normalizeSavedCalculationPayload(legacyRecord)?.loanStartDate).toBeUndefined()
+    expect(normalizeSavedCalculationPayload(legacyRecord)?.applicationFeeCalculationType).toBeUndefined()
     expect(normalizeSavedCalculationPayload(legacyRecord, '2026-02-01')?.loanStartDate).toBe(
       '2026-02-01',
     )
@@ -92,9 +93,13 @@ describe('normalizeSavedCalculationPayload', () => {
       propertyInsuranceRatePercent: '0.04',
       propertyInsuranceCalculationType: 'amount',
       propertyInsuranceAmount: '250',
+      applicationFeeCalculationType: 'percentage',
+      applicationFeePercent: '1.2',
     })
 
     expect(payload).not.toBeNull()
+    expect(payload?.applicationFeeCalculationType).toBe('percentage')
+    expect(payload?.applicationFeePercent).toBe(1.2)
     expect(payload?.repaymentType).toBe('annuity')
     expect(payload?.extraPaymentMode).toBe('reduceTerm')
     expect(payload?.lifeInsuranceCalculationType).toBe('percentage')
@@ -122,3 +127,4 @@ describe('getLegacyLoanStartDate', () => {
     expect(getLegacyLoanStartDate('not-a-date')).toBeUndefined()
   })
 })
+
