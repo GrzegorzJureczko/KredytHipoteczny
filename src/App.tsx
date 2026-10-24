@@ -435,6 +435,11 @@ type ConfirmRequest = {
   onConfirm: () => void
 }
 
+type ScheduleEvent = {
+  key: 'rate' | 'onetime' | 'regularStart' | 'regularEnd' | 'last'
+  label: string
+}
+
 const buildLoanInput = (source: FormState): LoanInput => ({
   loanAmount: source.amount,
   annualRate: source.rate,
@@ -1373,12 +1378,56 @@ function App() {
         ? form.amount
         : summary.schedule[index - 1]?.remainingBalance ?? 0
 
+    const rowMonthIndex = paymentDate.getFullYear() * 12 + paymentDate.getMonth() + 1
+    const events: ScheduleEvent[] = []
+
+    if (index > 0 && row.annualRate !== summary.schedule[index - 1].annualRate) {
+      events.push({ key: 'rate', label: 'Zmiana stopy' })
+    }
+
+    if (
+      form.extraPayments.some(
+        (payment) => payment.amount > 0 && toMonthIndex(payment.date) === rowMonthIndex,
+      )
+    ) {
+      events.push({ key: 'onetime', label: 'Nadpłata jednorazowa' })
+    }
+
+    const activeRegularOverpayments = form.regularOverpayments.filter((entry) => {
+      const startIndex = Math.max(toMonthIndex(entry.startDate), loanStartIndex)
+      return (
+        entry.amount > 0 &&
+        (entry.endDate === '' || toMonthIndex(entry.endDate) >= startIndex)
+      )
+    })
+
+    if (
+      activeRegularOverpayments.some(
+        (entry) => Math.max(toMonthIndex(entry.startDate), loanStartIndex) === rowMonthIndex,
+      )
+    ) {
+      events.push({ key: 'regularStart', label: 'Start nadpłaty regularnej' })
+    }
+
+    if (
+      activeRegularOverpayments.some(
+        (entry) => entry.endDate !== '' && toMonthIndex(entry.endDate) === rowMonthIndex,
+      )
+    ) {
+      events.push({ key: 'regularEnd', label: 'Koniec nadpłaty regularnej' })
+    }
+
+    if (index === summary.schedule.length - 1) {
+      events.push({ key: 'last', label: 'Ostatnia rata' })
+    }
+
     return {
       ...row,
       paymentDate,
       monthLabel: `${monthNames[paymentDate.getMonth()]} ${paymentDate.getFullYear()}`,
       year: paymentDate.getFullYear(),
       rateChanged: index === 0 || row.annualRate !== summary.schedule[index - 1].annualRate,
+      events,
       additionalCosts: getMonthlyAdditionalCost(index + 1, form, startBalance),
     }
   })
@@ -2630,8 +2679,23 @@ function App() {
                     <td className="num" data-label="Saldo na koniec roku">{formatCurrency(section.endBalance)}</td>
                   </tr>
                   {section.rows.map((row) => (
-                    <tr key={`${row.year}-${row.month}`} className="schedule-row" hidden={!isOpen}>
-                      <td data-label="Miesiąc">{capitalize(row.monthLabel)}</td>
+                    <tr
+                      key={`${row.year}-${row.month}`}
+                      className={row.events.length > 0 ? 'schedule-row has-event' : 'schedule-row'}
+                      hidden={!isOpen}
+                    >
+                      <td data-label="Miesiąc">
+                        {capitalize(row.monthLabel)}
+                        {row.events.length > 0 ? (
+                          <span className="row-events">
+                            {row.events.map((event) => (
+                              <span key={event.key} className={`event-tag event-${event.key}`}>
+                                {event.label}
+                              </span>
+                            ))}
+                          </span>
+                        ) : null}
+                      </td>
                       <td
                         className={row.rateChanged ? 'num' : 'num is-unchanged'}
                         data-label="Oprocentowanie"

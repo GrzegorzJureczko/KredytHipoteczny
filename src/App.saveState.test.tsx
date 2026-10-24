@@ -1027,6 +1027,66 @@ describe('repayment schedule', () => {
     ).toBeLessThan(3)
   })
 
+  describe('event markers', () => {
+    const rowsWithTag = (label: string) =>
+      Array.from(document.querySelectorAll('.schedule-row')).filter((row) =>
+        Array.from(row.querySelectorAll('.event-tag')).some((tag) => tag.textContent === label),
+      )
+
+    it('marks only the last installment by default', () => {
+      render(<App />)
+
+      const rows = Array.from(document.querySelectorAll('.schedule-row'))
+      const tagged = rows.filter((row) => row.querySelector('.event-tag'))
+
+      expect(tagged).toEqual([rows[rows.length - 1]])
+      expect(rowsWithTag('Ostatnia rata')).toHaveLength(1)
+    })
+
+    it('marks the month of a rate change but not the first month', () => {
+      render(<App />)
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmian\u0119' }))
+      fireEvent.change(document.querySelector('.row-with-note input') as HTMLInputElement, {
+        target: { value: '4' },
+      })
+
+      const tagged = rowsWithTag('Zmiana stopy')
+      expect(tagged).toHaveLength(1)
+      expect(tagged[0]).not.toBe(document.querySelector('.schedule-row'))
+      expect(tagged[0].classList.contains('has-event')).toBe(true)
+    })
+
+    it('marks the month of a one-time overpayment only when an amount is paid', () => {
+      render(<App />)
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Dodaj nadp\u0142at\u0119 jednorazow\u0105' }))
+      expect(rowsWithTag('Nadp\u0142ata jednorazowa')).toHaveLength(1)
+
+      const amountInput = document.querySelector(
+        '.extra-payment-row:not(.is-recurring) input',
+      ) as HTMLInputElement
+      fireEvent.change(amountInput, { target: { value: '0' } })
+      expect(rowsWithTag('Nadp\u0142ata jednorazowa')).toHaveLength(0)
+    })
+
+    it('marks the start and the end of a regular overpayment', () => {
+      render(<App />)
+
+      const row = addRegularOverpayment('500')
+      expect(rowsWithTag('Start nadp\u0142aty regularnej')).toHaveLength(1)
+      expect(rowsWithTag('Koniec nadp\u0142aty regularnej')).toHaveLength(0)
+
+      fireEvent.click(row.querySelector('input[type="checkbox"]') as HTMLInputElement)
+
+      const [startRow] = rowsWithTag('Start nadp\u0142aty regularnej')
+      const [endRow] = rowsWithTag('Koniec nadp\u0142aty regularnej')
+      expect(startRow).toBe(document.querySelector('.schedule-row'))
+      expect(endRow).toBeTruthy()
+      expect(endRow).not.toBe(startRow)
+    })
+  })
+
   it('opens only the first year by default and supports expand and collapse all', () => {
     render(<App />)
 

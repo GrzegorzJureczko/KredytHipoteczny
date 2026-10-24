@@ -1712,6 +1712,48 @@ input[type='number']::-webkit-outer-spin-button {
   color: #9a9a9a;
 }
 
+.schedule-row td:first-child {
+  white-space: normal;
+}
+
+.schedule-row.has-event td:first-child {
+  box-shadow: inset 3px 0 0 var(--brand-red);
+}
+
+.row-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.event-tag {
+  padding: 1px 6px;
+  border: 1px solid #101010;
+  color: #101010;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.event-tag.event-rate {
+  border-color: var(--brand-red);
+  color: var(--brand-red);
+}
+
+.event-tag.event-onetime {
+  background: #101010;
+  color: #fff;
+}
+
+.event-tag.event-last {
+  border-color: var(--brand-red);
+  background: var(--brand-red);
+  color: #fff;
+}
+
 .schedule-total-row th,
 .schedule-total-row td {
   background: #101010;
@@ -1778,6 +1820,14 @@ input[type='number']::-webkit-outer-spin-button {
 
   .schedule-row td:first-child::before {
     display: none;
+  }
+
+  .schedule-row.has-event td:first-child {
+    box-shadow: none;
+  }
+
+  .schedule-row.has-event {
+    box-shadow: inset 3px 0 0 var(--brand-red);
   }
 
   .schedule-row td:nth-child(3),
