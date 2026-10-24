@@ -6,6 +6,13 @@ import App from './App'
 
 configure({ asyncUtilTimeout: 5000 })
 
+const getInputByLabel = (labelText: string) =>
+  Array.from(document.querySelectorAll('label'))
+    .find((label) => label.textContent?.includes(labelText))
+    ?.querySelector('input') as HTMLInputElement
+
+const digitsOf = (input: HTMLInputElement) => input.value.replace(/\s/g, '')
+
 const baseSavedPayload = {
   amount: 300000,
   rate: 5.2,
@@ -211,7 +218,7 @@ describe('save button behavior', () => {
   }
 
   const changeAmount = (value: string) => {
-    const amountInput = document.querySelector('input[type="number"]') as HTMLInputElement
+    const amountInput = getInputByLabel('Kwota kredytu')
     fireEvent.change(amountInput, { target: { value } })
     return amountInput
   }
@@ -320,7 +327,7 @@ describe('save button behavior', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Anuluj' }))
 
     expect(screen.queryByRole('alertdialog')).toBeNull()
-    expect(amountInput.value).toBe('400000')
+    expect(digitsOf(amountInput)).toBe('400000')
 
     fireEvent.click(screen.getByRole('button', { name: 'Wczytaj' }))
     fireEvent.click(
@@ -330,7 +337,7 @@ describe('save button behavior', () => {
     )
 
     await waitFor(() => {
-      expect(amountInput.value).toBe('300000')
+      expect(digitsOf(amountInput)).toBe('300000')
     })
   })
 
@@ -477,6 +484,97 @@ describe('save button behavior', () => {
 
     expect(await screen.findByText(/Nie udało się odczytać zapisów: 1/)).toBeTruthy()
     expect(screen.getAllByRole('button', { name: 'Wczytaj' })).toHaveLength(1)
+  })
+})
+
+describe('form usability', () => {
+  const getSectionBadge = (title: string) =>
+    screen.getByText(title, { selector: 'summary' }).querySelector('.section-badge')?.textContent
+
+  it('starts without a hidden overpayment so the default term is the full loan term', () => {
+    render(<App />)
+
+    expect(screen.getByText('360 mies.')).toBeTruthy()
+    expect(getSectionBadge('Nadpłaty')).toBe('Brak')
+    expect(getSectionBadge('Zmiany oprocentowania')).toBe('Brak')
+  })
+
+  it('summarizes collapsed sections in their headers', () => {
+    render(<App />)
+
+    expect(getSectionBadge('Koszty około-kredytowe')).toMatch(/^Łącznie .*zł$/)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmianę' }))
+    expect(getSectionBadge('Zmiany oprocentowania')).toBe('1 zmiana')
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmianę' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmianę' }))
+    expect(getSectionBadge('Zmiany oprocentowania')).toBe('3 zmiany')
+
+    fireEvent.change(
+      screen.getByText('Regularna wpłata miesięczna').closest('label')!.querySelector('input')!,
+      { target: { value: '700' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj nadpłatę' }))
+    expect(getSectionBadge('Nadpłaty')).toMatch(/^700,00.zł\/mies\. \+ 1 jednorazowa$/)
+  })
+
+  it('lets the user clear an amount field while typing and falls back to zero on blur', () => {
+    render(<App />)
+
+    const amountInput = getInputByLabel('Kwota kredytu')
+
+    fireEvent.change(amountInput, { target: { value: '' } })
+    expect(amountInput.value).toBe('')
+    expect(screen.getByText('Kwota kredytu musi być większa od zera.')).toBeTruthy()
+
+    fireEvent.change(amountInput, { target: { value: '250000' } })
+    expect(digitsOf(amountInput)).toBe('250000')
+    expect(screen.queryByText('Kwota kredytu musi być większa od zera.')).toBeNull()
+
+    fireEvent.change(amountInput, { target: { value: '' } })
+    fireEvent.blur(amountInput)
+    expect(amountInput.value).toBe('0')
+  })
+
+  it('groups thousands inside amount fields and accepts a decimal comma', () => {
+    render(<App />)
+
+    const amountInput = getInputByLabel('Kwota kredytu')
+
+    fireEvent.change(amountInput, { target: { value: '3500000' } })
+    expect(amountInput.value).toBe('3\u00a0500\u00a0000')
+
+    fireEvent.change(amountInput, { target: { value: '1234567,5' } })
+    expect(amountInput.value).toBe('1\u00a0234\u00a0567,5')
+
+    fireEvent.change(amountInput, { target: { value: '12ab3' } })
+    expect(amountInput.value).toBe('123')
+  })
+
+  it('warns when the loan amount exceeds the property value', () => {
+    render(<App />)
+
+    fireEvent.change(getInputByLabel('Kwota kredytu'), { target: { value: '500000' } })
+    expect(screen.getByText('Kwota kredytu przekracza wartość nieruchomości.')).toBeTruthy()
+
+    fireEvent.change(getInputByLabel('Wartość nieruchomości'), { target: { value: '600000' } })
+    expect(screen.queryByText('Kwota kredytu przekracza wartość nieruchomości.')).toBeNull()
+  })
+
+  it('labels amount and percentage fields with their units', () => {
+    render(<App />)
+
+    const unitsOf = (labelText: string) =>
+      Array.from(document.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes(labelText))
+        ?.querySelector('.input-unit')
+        ?.getAttribute('data-unit')
+
+    expect(unitsOf('Kwota kredytu')).toBe('zł')
+    expect(unitsOf('WIBOR')).toBe('%')
+    expect(unitsOf('Marża')).toBe('%')
+    expect(unitsOf('Prowizja')).toBe('zł')
   })
 })
 
