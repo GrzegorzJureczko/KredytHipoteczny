@@ -1,3 +1,11 @@
+export type SavedRegularOverpayment = {
+  id: number
+  amount: number
+  startDate: string
+  endDate: string
+  effect: 'reduceTerm' | 'reduceInstallment'
+}
+
 export type SavedCalculationPayload = {
   amount: number
   loanStartDate?: string
@@ -6,12 +14,15 @@ export type SavedCalculationPayload = {
   margin?: number
   years: number
   repaymentType: 'annuity' | 'decreasing'
-  rateChanges: Array<{ id: number; date: string; rate: number }>
-  extraMonthlyPayment: number
-  extraMonthlyPaymentStartDate: string
-  extraPaymentMode: 'reduceTerm' | 'reduceInstallment'
+  rateChanges: Array<{ id: number; date: string; rate?: number; wibor?: number }>
+  extraMonthlyPayment?: number
+  extraMonthlyPaymentStartDate?: string
+  extraPaymentMode?: 'reduceTerm' | 'reduceInstallment'
+  regularOverpayments?: SavedRegularOverpayment[]
   extraPayments: Array<{ id: number; amount: number; date: string; effect: 'reduceTerm' | 'reduceInstallment' }>
   applicationFee: number
+  applicationFeeCalculationType?: 'percentage' | 'amount'
+  applicationFeePercent?: number
   insurance: number
   notary: number
   appraisal: number
@@ -59,9 +70,6 @@ export const normalizeSavedCalculationPayload = (
     'years',
     'repaymentType',
     'rateChanges',
-    'extraMonthlyPayment',
-    'extraMonthlyPaymentStartDate',
-    'extraPaymentMode',
     'extraPayments',
     'applicationFee',
     'notary',
@@ -80,16 +88,24 @@ export const normalizeSavedCalculationPayload = (
     years: Number(record.years),
     repaymentType: record.repaymentType === 'decreasing' ? 'decreasing' : 'annuity',
     rateChanges: Array.isArray(record.rateChanges)
-      ? record.rateChanges.map((entry) => ({
-          id: Number((entry as Record<string, unknown>)?.id ?? Date.now()),
-          date: String((entry as Record<string, unknown>)?.date ?? ''),
-          rate: Number((entry as Record<string, unknown>)?.rate ?? 0),
-        }))
+      ? record.rateChanges.map((entry) => {
+          const item = (entry ?? {}) as Record<string, unknown>
+          const rateChange: SavedCalculationPayload['rateChanges'][number] = {
+            id: Number(item.id ?? Date.now()),
+            date: String(item.date ?? ''),
+          }
+
+          if (item.rate !== undefined) {
+            rateChange.rate = Number(item.rate)
+          }
+
+          if (item.wibor !== undefined) {
+            rateChange.wibor = Number(item.wibor)
+          }
+
+          return rateChange
+        })
       : [],
-    extraMonthlyPayment: Number(record.extraMonthlyPayment),
-    extraMonthlyPaymentStartDate: String(record.extraMonthlyPaymentStartDate ?? ''),
-    extraPaymentMode:
-      record.extraPaymentMode === 'reduceInstallment' ? 'reduceInstallment' : 'reduceTerm',
     extraPayments: Array.isArray(record.extraPayments)
       ? record.extraPayments.map((entry) => ({
           id: Number((entry as Record<string, unknown>)?.id ?? Date.now()),
@@ -118,10 +134,46 @@ export const normalizeSavedCalculationPayload = (
     propertyInsuranceRatePercent: Number(record.propertyInsuranceRatePercent ?? 0),
   }
 
+  if ('extraMonthlyPayment' in record) {
+    payload.extraMonthlyPayment = Number(record.extraMonthlyPayment)
+  }
+
+  if ('extraMonthlyPaymentStartDate' in record) {
+    payload.extraMonthlyPaymentStartDate = String(record.extraMonthlyPaymentStartDate ?? '')
+  }
+
+  if ('extraPaymentMode' in record) {
+    payload.extraPaymentMode =
+      record.extraPaymentMode === 'reduceInstallment' ? 'reduceInstallment' : 'reduceTerm'
+  }
+
+  if (Array.isArray(record.regularOverpayments)) {
+    payload.regularOverpayments = record.regularOverpayments.map((entry) => {
+      const item = (entry ?? {}) as Record<string, unknown>
+
+      return {
+        id: Number(item.id ?? Date.now()),
+        amount: Number(item.amount ?? 0),
+        startDate: String(item.startDate ?? ''),
+        endDate: String(item.endDate ?? ''),
+        effect: item.effect === 'reduceInstallment' ? 'reduceInstallment' : 'reduceTerm',
+      }
+    })
+  }
+
   if ('loanStartDate' in record) {
     payload.loanStartDate = String(record.loanStartDate ?? '')
   } else if (legacyLoanStartDate) {
     payload.loanStartDate = legacyLoanStartDate
+  }
+
+  if ('applicationFeeCalculationType' in record) {
+    payload.applicationFeeCalculationType =
+      record.applicationFeeCalculationType === 'percentage' ? 'percentage' : 'amount'
+  }
+
+  if ('applicationFeePercent' in record) {
+    payload.applicationFeePercent = Number(record.applicationFeePercent ?? 0)
   }
 
   if ('lifeInsuranceCalculationType' in record) {

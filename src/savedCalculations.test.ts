@@ -56,6 +56,7 @@ describe('normalizeSavedCalculationPayload', () => {
     }
 
     expect(normalizeSavedCalculationPayload(legacyRecord)?.loanStartDate).toBeUndefined()
+    expect(normalizeSavedCalculationPayload(legacyRecord)?.applicationFeeCalculationType).toBeUndefined()
     expect(normalizeSavedCalculationPayload(legacyRecord, '2026-02-01')?.loanStartDate).toBe(
       '2026-02-01',
     )
@@ -92,9 +93,13 @@ describe('normalizeSavedCalculationPayload', () => {
       propertyInsuranceRatePercent: '0.04',
       propertyInsuranceCalculationType: 'amount',
       propertyInsuranceAmount: '250',
+      applicationFeeCalculationType: 'percentage',
+      applicationFeePercent: '1.2',
     })
 
     expect(payload).not.toBeNull()
+    expect(payload?.applicationFeeCalculationType).toBe('percentage')
+    expect(payload?.applicationFeePercent).toBe(1.2)
     expect(payload?.repaymentType).toBe('annuity')
     expect(payload?.extraPaymentMode).toBe('reduceTerm')
     expect(payload?.lifeInsuranceCalculationType).toBe('percentage')
@@ -111,6 +116,42 @@ describe('normalizeSavedCalculationPayload', () => {
   })
 })
 
+describe('regular overpayments and WIBOR-based rate changes', () => {
+  const record = {
+    amount: 300000,
+    rate: 5.1,
+    years: 25,
+    repaymentType: 'annuity',
+    rateChanges: [{ id: 1, date: '2028-02-01', wibor: 3.1 }],
+    regularOverpayments: [
+      { id: 7, amount: '600', startDate: '2027-01-01', endDate: '', effect: 'reduceInstallment' },
+      { id: 8, amount: 200, startDate: '2027-06-01', endDate: '2029-06-01', effect: 'nope' },
+    ],
+    extraPayments: [],
+    applicationFee: 1500,
+    notary: 2500,
+    appraisal: 1600,
+    commission: 0,
+  }
+
+  it('accepts payloads without the legacy single overpayment fields', () => {
+    const payload = normalizeSavedCalculationPayload(record)
+
+    expect(payload).not.toBeNull()
+    expect(payload).not.toHaveProperty('extraMonthlyPayment')
+    expect(payload?.regularOverpayments).toEqual([
+      { id: 7, amount: 600, startDate: '2027-01-01', endDate: '', effect: 'reduceInstallment' },
+      { id: 8, amount: 200, startDate: '2027-06-01', endDate: '2029-06-01', effect: 'reduceTerm' },
+    ])
+  })
+
+  it('keeps a WIBOR on rate changes and leaves out a missing rate', () => {
+    const payload = normalizeSavedCalculationPayload(record)
+
+    expect(payload?.rateChanges).toEqual([{ id: 1, date: '2028-02-01', wibor: 3.1 }])
+  })
+})
+
 describe('getLegacyLoanStartDate', () => {
   it('returns the first day of the month after creation', () => {
     expect(getLegacyLoanStartDate('2026-01-15T12:00:00')).toBe('2026-02-01')
@@ -122,3 +163,4 @@ describe('getLegacyLoanStartDate', () => {
     expect(getLegacyLoanStartDate('not-a-date')).toBeUndefined()
   })
 })
+

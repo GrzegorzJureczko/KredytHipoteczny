@@ -13,6 +13,33 @@ const getInputByLabel = (labelText: string) =>
 
 const digitsOf = (input: HTMLInputElement) => input.value.replace(/\s/g, '')
 
+const addRegularOverpayment = (amount: string) => {
+  fireEvent.click(screen.getByRole('button', { name: '+ Dodaj nadpłatę regularną' }))
+
+  const rows = document.querySelectorAll('.extra-payment-row.is-recurring')
+  const row = rows[rows.length - 1] as HTMLElement
+  fireEvent.change(row.querySelector('input') as HTMLInputElement, { target: { value: amount } })
+
+  return row
+}
+
+const getSummaryText = () => document.querySelector('.summary-panel')?.textContent ?? ''
+
+const calculationTypeButton = (
+  view: ReturnType<typeof within>,
+  groupLabel: string,
+  type: 'amount' | 'percentage',
+) =>
+  within(view.getByRole('group', { name: groupLabel })).getByRole('button', {
+    name: type === 'amount' ? 'Kwotowo' : 'Procentowo',
+  })
+
+const chooseCalculationType = (
+  view: ReturnType<typeof within>,
+  groupLabel: string,
+  type: 'amount' | 'percentage',
+) => fireEvent.click(calculationTypeButton(view, groupLabel, type))
+
 const baseSavedPayload = {
   amount: 300000,
   rate: 5.2,
@@ -264,6 +291,8 @@ describe('save button behavior', () => {
     const updatedValues = tableCalls.update.mock.calls[0][0] as Record<string, unknown>
     expect(Object.keys(updatedValues)).toEqual(['payload'])
     expect((updatedValues.payload as { amount: number }).amount).toBe(400000)
+    expect(updatedValues.payload).toHaveProperty('regularOverpayments')
+    expect(updatedValues.payload).not.toHaveProperty('extraMonthlyPayment')
     expect(tableCalls.updateEq).toHaveBeenCalledWith('id', 'saved-1')
     expect(tableCalls.updateEq).toHaveBeenCalledWith('user_id', 'user-1')
 
@@ -473,6 +502,46 @@ describe('save button behavior', () => {
     expect(year.value).toBe('2026')
   })
 
+  it('turns a legacy monthly overpayment into a regular overpayment when loading', async () => {
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+
+    // The saved payload has the old single field: 500 zl monthly from 2027-10
+    const badge = screen
+      .getByText('Nadpłaty', { selector: 'summary' })
+      .querySelector('.section-badge')?.textContent
+    expect(badge).toBe('1 regularna')
+
+    const row = document.querySelector('.extra-payment-row.is-recurring') as HTMLElement
+    expect(digitsOf(row.querySelector('input') as HTMLInputElement)).toBe('500')
+    expect((row.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('converts legacy rate changes to a WIBOR using the saved margin', async () => {
+    tableCalls.listResult.mockResolvedValue({
+      data: [
+        {
+          ...savedRecord,
+          payload: {
+            ...baseSavedPayload,
+            wibor: 3,
+            margin: 2,
+            rate: 5,
+            rateChanges: [{ id: 1, date: '2028-02-01', rate: 4.5 }],
+          },
+        },
+      ],
+      error: null,
+    })
+
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+
+    const row = document.querySelector('.row-with-note') as HTMLElement
+    expect((row.querySelector('input') as HTMLInputElement).value).toBe('2.5')
+    expect(row.textContent).toContain('4,5%')
+  })
+
   it('tells the user when a saved calculation cannot be read', async () => {
     tableCalls.listResult.mockResolvedValue({
       data: [savedRecord, { id: 'broken', name: 'Uszkodzony', payload: {}, created_at: '2026-01-15T12:00:00Z' }],
@@ -494,7 +563,7 @@ describe('form usability', () => {
   it('starts without a hidden overpayment so the default term is the full loan term', () => {
     render(<App />)
 
-    expect(screen.getByText('360 mies.')).toBeTruthy()
+    expect(getSummaryText()).toContain('30 lat')
     expect(getSectionBadge('Nadpłaty')).toBe('Brak')
     expect(getSectionBadge('Zmiany oprocentowania')).toBe('Brak')
   })
@@ -511,12 +580,12 @@ describe('form usability', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmianę' }))
     expect(getSectionBadge('Zmiany oprocentowania')).toBe('3 zmiany')
 
-    fireEvent.change(
-      screen.getByText('Regularna wpłata miesięczna').closest('label')!.querySelector('input')!,
-      { target: { value: '700' } },
-    )
-    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj nadpłatę' }))
-    expect(getSectionBadge('Nadpłaty')).toMatch(/^700,00.zł\/mies\. \+ 1 jednorazowa$/)
+    addRegularOverpayment('700')
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj nadpłatę jednorazową' }))
+    expect(getSectionBadge('Nadpłaty')).toBe('1 regularna + 1 jednorazowa')
+
+    addRegularOverpayment('300')
+    expect(getSectionBadge('Nadpłaty')).toBe('2 regularne + 1 jednorazowa')
   })
 
   it('lets the user clear an amount field while typing and falls back to zero on blur', () => {
@@ -574,7 +643,477 @@ describe('form usability', () => {
     expect(unitsOf('Kwota kredytu')).toBe('zł')
     expect(unitsOf('WIBOR')).toBe('%')
     expect(unitsOf('Marża')).toBe('%')
-    expect(unitsOf('Prowizja')).toBe('zł')
+    expect(unitsOf('Kwota prowizji')).toBe('zł')
+  })
+})
+
+describe('loan form details', () => {
+  const getRateChangeRows = () => Array.from(document.querySelectorAll('.row-with-note'))
+
+  it('shows LTV and own contribution, flagging high LTV', () => {
+    render(<App />)
+
+    // 350 000 / 400 000 = 87,5%
+    const ltv = document.querySelector('.loan-ltv') as HTMLElement
+    expect(ltv.textContent).toContain('87,5%')
+    expect(ltv.textContent).toMatch(/50.000,00.z\u0142/)
+    expect(ltv.textContent).toContain('Wysokie LTV')
+
+    fireEvent.change(getInputByLabel('Kwota kredytu'), { target: { value: '200000' } })
+    expect(document.querySelector('.loan-ltv')?.textContent).toContain('50%')
+    expect(document.querySelector('.loan-ltv')?.textContent).not.toContain('Wysokie LTV')
+  })
+
+  it('lets the user type any loan term in years and warns outside 1-40', () => {
+    render(<App />)
+
+    const termInput = getInputByLabel('Okres kredytowania')
+    fireEvent.change(termInput, { target: { value: '27' } })
+    expect(getSummaryText()).toContain('27 lat')
+
+    fireEvent.change(termInput, { target: { value: '45' } })
+    expect(screen.getByText('Okres kredytowania powinien mie\u015bci\u0107 si\u0119 w zakresie 1\u201340 lat.')).toBeTruthy()
+  })
+
+  it('switches the application fee to a percentage of the loan amount', () => {
+    render(<App />)
+    const view = within(document.body)
+    const group = 'Spos\u00f3b naliczania prowizji'
+
+    expect(calculationTypeButton(view, group, 'amount').getAttribute('aria-pressed')).toBe('true')
+
+    chooseCalculationType(view, group, 'percentage')
+    // 1500 / 350000 carried over as a percentage
+    expect(getInputByLabel('Stawka prowizji').value).toBe('0.4286')
+
+    fireEvent.change(getInputByLabel('Stawka prowizji'), { target: { value: '1' } })
+    // 1% of 350 000 = 3 500
+    expect(digitsOf(getInputByLabel('Kwota prowizji')).replace(',', '.')).toBe('3500')
+
+    const firstRowCosts = document.querySelectorAll('.schedule-row')[0].querySelectorAll('td')[6]
+    // 3500 fee + 3500 notary + 1800 appraisal + 200 life + 200 property
+    expect(firstRowCosts.textContent).toMatch(/9.?200,00/)
+
+    chooseCalculationType(view, group, 'amount')
+    expect(digitsOf(getInputByLabel('Kwota prowizji'))).toBe('3500')
+  })
+
+  it('sorts rate changes by date and explains unusual dates', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmian\u0119' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmian\u0119' }))
+
+    const [firstRow] = getRateChangeRows()
+    const firstYear = firstRow.querySelectorAll('select')[1] as HTMLSelectElement
+    // Move the first change far beyond the end of the loan (the year list reaches 40 years ahead)
+    fireEvent.change(firstYear, { target: { value: String(Number(firstYear.value) + 39) } })
+
+    const rows = getRateChangeRows()
+    expect(rows).toHaveLength(2)
+    // The shifted change is now sorted last and flagged
+    expect(rows[1].textContent).toContain('po zako\u0144czeniu sp\u0142aty')
+    expect(rows[0].textContent).not.toContain('po zako\u0144czeniu sp\u0142aty')
+  })
+
+  it('warns about two rate changes in the same month', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmian\u0119' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmian\u0119' }))
+
+    expect(getRateChangeRows()[0].textContent).toContain('tym samym miesi\u0105cu')
+    expect(getRateChangeRows()[1].textContent).toContain('tym samym miesi\u0105cu')
+  })
+
+  it('removes a rate change with the icon button', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmian\u0119' }))
+    expect(getRateChangeRows()).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Usu\u0144 zmian\u0119 oprocentowania' }))
+    expect(getRateChangeRows()).toHaveLength(0)
+  })
+
+  it('describes the effect of a regular overpayment', () => {
+    render(<App />)
+
+    const row = addRegularOverpayment('500')
+    expect(row.textContent).toContain('nadpłata skraca okres spłaty')
+
+    fireEvent.change(row.querySelector('select') as HTMLSelectElement, {
+      target: { value: 'reduceInstallment' },
+    })
+
+    expect(row.textContent).toContain('Rata jest przeliczana po każdej nadpłacie')
+  })
+
+  it('adds several regular overpayments with their own start and end', () => {
+    render(<App />)
+
+    const first = addRegularOverpayment('500')
+    const second = addRegularOverpayment('200')
+
+    expect(document.querySelectorAll('.extra-payment-row.is-recurring')).toHaveLength(2)
+    expect(first).not.toBe(second)
+
+    // Both run to the end of the loan by default
+    const endCheckbox = second.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(endCheckbox.checked).toBe(true)
+    expect(second.querySelectorAll('select')).toHaveLength(3)
+
+    fireEvent.click(endCheckbox)
+    expect(endCheckbox.checked).toBe(false)
+    // Effect select + start month/year + end month/year
+    expect(second.querySelectorAll('select')).toHaveLength(5)
+  })
+
+  it('stops a regular overpayment after its end month', () => {
+    render(<App />)
+
+    const row = addRegularOverpayment('1000')
+    fireEvent.click(row.querySelector('input[type="checkbox"]') as HTMLInputElement)
+
+    const scheduleRows = Array.from(document.querySelectorAll('.schedule-row'))
+    const overpaidRows = scheduleRows.filter(
+      (scheduleRow) => (scheduleRow.querySelectorAll('td')[5].textContent ?? '') !== '\u2013',
+    )
+
+    // Default end is 24 months after the start, so 1000 zl is paid for 25 months at most
+    expect(overpaidRows.length).toBeGreaterThan(0)
+    expect(overpaidRows.length).toBeLessThanOrEqual(25)
+  })
+
+  it('warns when a regular overpayment ends before it starts', () => {
+    render(<App />)
+
+    const row = addRegularOverpayment('500')
+    fireEvent.click(row.querySelector('input[type="checkbox"]') as HTMLInputElement)
+
+    const selects = row.querySelectorAll('select')
+    // selects: effect, start month, start year, end month, end year
+    const startYear = Number((selects[2] as HTMLSelectElement).value)
+    fireEvent.change(selects[4], { target: { value: String(startYear - 1) } })
+
+    expect(row.parentElement?.textContent).toContain('Koniec jest przed początkiem')
+  })
+
+  it('removes a regular overpayment with the icon button', () => {
+    render(<App />)
+
+    addRegularOverpayment('500')
+    expect(document.querySelectorAll('.extra-payment-row.is-recurring')).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Usuń nadpłatę regularną' }))
+    expect(document.querySelectorAll('.extra-payment-row.is-recurring')).toHaveLength(0)
+  })
+
+  it('enters rate changes as a new WIBOR and shows the resulting rate', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmianę' }))
+    const row = getRateChangeRows()[0] as HTMLElement
+    const wiborInput = row.querySelector('input') as HTMLInputElement
+
+    // Starts from the current WIBOR (2,7%) with margin 2,5%
+    expect(wiborInput.value).toBe('2.7')
+    expect(row.textContent).toContain('5,2%')
+
+    fireEvent.change(wiborInput, { target: { value: '3.2' } })
+    expect(row.textContent).toContain('5,7%')
+
+    fireEvent.change(getInputByLabel('Marża'), { target: { value: '2' } })
+    expect(row.textContent).toContain('5,2%')
+  })
+
+  it('opens a field tooltip on tap and closes it when tapping elsewhere', () => {
+    render(<App />)
+
+    const trigger = document.querySelector('.field-tooltip-trigger') as HTMLElement
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(trigger)
+    expect(trigger.classList.contains('is-open')).toBe(true)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.pointerDown(document.body)
+    expect(trigger.classList.contains('is-open')).toBe(false)
+  })
+})
+
+describe('summary panel', () => {
+  const setStartDate = (year: string, month: string) => {
+    fireEvent.change(screen.getAllByRole('combobox', { name: 'Rok' })[0], { target: { value: year } })
+    fireEvent.change(screen.getAllByRole('combobox', { name: 'Miesiąc' })[0], {
+      target: { value: month },
+    })
+  }
+
+  it('shows the repayment period together with the month of the last payment', () => {
+    render(<App />)
+    setStartDate('2030', '1')
+
+    const text = getSummaryText()
+    expect(text).toContain('30 lat')
+    expect(text).toContain('do: grudzień 2059')
+  })
+
+  it('splits the total cost into principal, interest and additional costs that add up', () => {
+    render(<App />)
+
+    const legendRows = Array.from(document.querySelectorAll('.cost-legend li'))
+    expect(legendRows.map((row) => row.querySelector('span:nth-of-type(2)')?.textContent)).toEqual([
+      'Kapitał',
+      'Odsetki',
+      'Koszty dodatkowe',
+    ])
+    expect(document.querySelectorAll('.cost-bar-segment')).toHaveLength(3)
+
+    const parseAmount = (text: string | null | undefined) =>
+      Number((text ?? '').replace(/[^\d,]/g, '').replace(',', '.'))
+    const [principal, interest, additional] = legendRows.map((row) =>
+      parseAmount(row.querySelector('strong')?.textContent),
+    )
+    const total = parseAmount(document.querySelector('.cost-breakdown-header strong')?.textContent)
+
+    // Default loan: 350 000 zł fully repaid
+    expect(Math.abs(principal - 350000)).toBeLessThan(0.02)
+    expect(Math.abs(principal + interest + additional - total)).toBeLessThan(0.02)
+  })
+
+  it('hides the overpayment effect without overpayments and shows interest saved with them', () => {
+    render(<App />)
+
+    expect(document.querySelector('.savings-box')).toBeNull()
+
+    addRegularOverpayment('1000')
+
+    const savings = document.querySelector('.savings-box')
+    expect(savings?.textContent).toContain('Mniej odsetek')
+    expect(savings?.textContent).toContain('Krótszy okres')
+  })
+
+  it('does not claim a shorter period when a one-off overpayment only lowers the installment', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj nadpłatę jednorazową' }))
+
+    const row = document.querySelector('.extra-payment-row') as HTMLElement
+    fireEvent.change(row.querySelector('input') as HTMLInputElement, { target: { value: '100000' } })
+    const effectSelects = row.querySelectorAll('select')
+    fireEvent.change(effectSelects[effectSelects.length - 1], {
+      target: { value: 'reduceInstallment' },
+    })
+
+    const savings = document.querySelector('.savings-box')
+    expect(savings?.textContent).toContain('Mniej odsetek')
+    expect(savings?.textContent).not.toContain('Krótszy okres')
+  })
+
+  it('counts additional costs only while the loan runs, matching the schedule rows', () => {
+    render(<App />)
+
+    addRegularOverpayment('3000')
+
+    const rows = Array.from(document.querySelectorAll('.schedule-row'))
+    expect(rows.length).toBeLessThan(360)
+
+    const parseAmount = (text: string | null | undefined) =>
+      Number((text ?? '').replace(/[^\d,]/g, '').replace(',', '.'))
+    const scheduleCosts = rows.reduce(
+      (sum, row) => sum + parseAmount(row.querySelectorAll('td')[6].textContent),
+      0,
+    )
+    const summaryCosts = parseAmount(
+      document.querySelectorAll('.cost-legend li')[2].querySelector('strong')?.textContent,
+    )
+
+    expect(Math.abs(summaryCosts - scheduleCosts)).toBeLessThan(rows.length * 0.01)
+  })
+
+  it('labels the first installment and shows the last one for decreasing installments', () => {
+    render(<App />)
+
+    expect(getSummaryText()).toContain('Rata miesięczna')
+    expect(getSummaryText()).not.toContain('Ostatnia rata')
+
+    const repaymentSelect = screen.getByDisplayValue('Raty równe (annuitetowe)')
+    fireEvent.change(repaymentSelect, { target: { value: 'decreasing' } })
+
+    expect(getSummaryText()).toContain('Pierwsza rata')
+    expect(getSummaryText()).toContain('Ostatnia rata')
+  })
+})
+
+describe('repayment schedule', () => {
+  const parseAmount = (text: string | null | undefined) =>
+    Number((text ?? '').replace(/[^\d,]/g, '').replace(',', '.'))
+  const getYearSections = () => Array.from(document.querySelectorAll('.year-section'))
+  const getRows = (section: Element) =>
+    Array.from(section.querySelectorAll('.schedule-row')) as HTMLTableRowElement[]
+
+  it('uses a single table with one header and a section per year', () => {
+    render(<App />)
+
+    expect(document.querySelectorAll('.schedule-table table')).toHaveLength(1)
+    expect(document.querySelectorAll('.schedule-table thead th')).toHaveLength(8)
+    expect(getYearSections().length).toBeGreaterThanOrEqual(30)
+  })
+
+  it('writes month names with a capital letter', () => {
+    render(<App />)
+
+    const firstMonth = document.querySelector('.schedule-row td')?.textContent ?? ''
+    expect(firstMonth).toMatch(/^[A-Z\u0104\u0106\u0118\u0141\u0143\u00d3\u015a\u0179\u017b]/)
+  })
+
+  it('shows a dash for empty overpayments and the amount when one is paid', () => {
+    render(<App />)
+
+    expect(document.querySelectorAll('.schedule-row td')[5].textContent).toBe('\u2013')
+
+    addRegularOverpayment('500')
+    expect(document.querySelectorAll('.schedule-row td')[5].textContent).toMatch(/^500,00/)
+  })
+
+  it('mutes a repeated rate and keeps the month of a rate change prominent', () => {
+    render(<App />)
+
+    const mutedCount = () =>
+      document.querySelectorAll('.schedule-row td.is-unchanged').length
+    const total = document.querySelectorAll('.schedule-row').length
+
+    // Only the first month shows the rate prominently
+    expect(mutedCount()).toBe(total - 1)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmian\u0119' }))
+    fireEvent.change(document.querySelector('.row-with-note input') as HTMLInputElement, {
+      target: { value: '4' },
+    })
+
+    // The first month and the month of the change
+    expect(mutedCount()).toBe(total - 2)
+  })
+
+  it('shows yearly subtotals that match the months of that year', () => {
+    render(<App />)
+
+    const section = getYearSections()[1]
+    const rows = getRows(section)
+    const yearCells = section.querySelectorAll('.year-row td')
+
+    const interest = rows.reduce(
+      (sum, row) => sum + parseAmount(row.querySelectorAll('td')[4].textContent),
+      0,
+    )
+
+    expect(Math.abs(parseAmount(yearCells[3].textContent) - interest)).toBeLessThan(0.1)
+    expect(yearCells[6].textContent).toBe(rows[rows.length - 1].querySelectorAll('td')[7].textContent)
+  })
+
+  it('adds a totals row consistent with the summary', () => {
+    render(<App />)
+
+    const totals = document.querySelectorAll('.schedule-total-row td')
+    const interestInSummary = parseAmount(
+      document.querySelectorAll('.cost-legend li')[1].querySelector('strong')?.textContent,
+    )
+
+    expect(Math.abs(parseAmount(totals[3].textContent) - interestInSummary)).toBeLessThan(3)
+    // Repaid principal (regular + overpaid) equals the loan amount
+    expect(
+      Math.abs(parseAmount(totals[2].textContent) + parseAmount(totals[4].textContent) - 350000),
+    ).toBeLessThan(3)
+  })
+
+  describe('event markers', () => {
+    const rowsWithTag = (label: string) =>
+      Array.from(document.querySelectorAll('.schedule-row')).filter((row) =>
+        Array.from(row.querySelectorAll('.event-tag')).some((tag) => tag.textContent === label),
+      )
+
+    it('marks only the last installment by default', () => {
+      render(<App />)
+
+      const rows = Array.from(document.querySelectorAll('.schedule-row'))
+      const tagged = rows.filter((row) => row.querySelector('.event-tag'))
+
+      expect(tagged).toEqual([rows[rows.length - 1]])
+      expect(rowsWithTag('Ostatnia rata')).toHaveLength(1)
+    })
+
+    it('marks the month of a rate change but not the first month', () => {
+      render(<App />)
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmian\u0119' }))
+      fireEvent.change(document.querySelector('.row-with-note input') as HTMLInputElement, {
+        target: { value: '4' },
+      })
+
+      const tagged = rowsWithTag('Zmiana stopy')
+      expect(tagged).toHaveLength(1)
+      expect(tagged[0]).not.toBe(document.querySelector('.schedule-row'))
+      expect(tagged[0].classList.contains('has-event')).toBe(true)
+    })
+
+    it('marks the month of a one-time overpayment only when an amount is paid', () => {
+      render(<App />)
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Dodaj nadp\u0142at\u0119 jednorazow\u0105' }))
+      expect(rowsWithTag('Nadp\u0142ata jednorazowa')).toHaveLength(1)
+
+      const amountInput = document.querySelector(
+        '.extra-payment-row:not(.is-recurring) input',
+      ) as HTMLInputElement
+      fireEvent.change(amountInput, { target: { value: '0' } })
+      expect(rowsWithTag('Nadp\u0142ata jednorazowa')).toHaveLength(0)
+    })
+
+    it('marks the start and the end of a regular overpayment', () => {
+      render(<App />)
+
+      const row = addRegularOverpayment('500')
+      expect(rowsWithTag('Start nadp\u0142aty regularnej')).toHaveLength(1)
+      expect(rowsWithTag('Koniec nadp\u0142aty regularnej')).toHaveLength(0)
+
+      fireEvent.click(row.querySelector('input[type="checkbox"]') as HTMLInputElement)
+
+      const [startRow] = rowsWithTag('Start nadp\u0142aty regularnej')
+      const [endRow] = rowsWithTag('Koniec nadp\u0142aty regularnej')
+      expect(startRow).toBe(document.querySelector('.schedule-row'))
+      expect(endRow).toBeTruthy()
+      expect(endRow).not.toBe(startRow)
+    })
+  })
+
+  it('opens only the first year by default and supports expand and collapse all', () => {
+    render(<App />)
+
+    const sections = getYearSections()
+    expect(getRows(sections[0]).every((row) => !row.hidden)).toBe(true)
+    expect(getRows(sections[1]).every((row) => row.hidden)).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rozwi\u0144 wszystko' }))
+    expect(Array.from(document.querySelectorAll('.schedule-row')).every((row) => !(row as HTMLElement).hidden)).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zwi\u0144 wszystko' }))
+    expect(Array.from(document.querySelectorAll('.schedule-row')).every((row) => (row as HTMLElement).hidden)).toBe(true)
+    expect(document.querySelector('.year-toggle')?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('keeps a manually opened year open after the parameters change', () => {
+    render(<App />)
+
+    const secondToggle = document.querySelectorAll('.year-toggle')[1] as HTMLElement
+    fireEvent.click(secondToggle)
+    expect(secondToggle.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.change(getInputByLabel('Kwota kredytu'), { target: { value: '300000' } })
+
+    const sections = getYearSections()
+    expect(getRows(sections[1]).every((row) => !row.hidden)).toBe(true)
+    expect(getRows(sections[0]).every((row) => !row.hidden)).toBe(true)
   })
 })
 
@@ -603,8 +1142,8 @@ describe('registration flow', () => {
     fireEvent.change(yearSelects[0], { target: { value: '2025' } })
     fireEvent.change(monthSelects[0], { target: { value: '6' } })
 
-    const firstYearGroup = document.querySelector('.year-group')
-    expect(firstYearGroup?.textContent).toContain('czerwiec 2025')
+    const firstRow = document.querySelector('.schedule-row')
+    expect(firstRow?.textContent).toContain('Czerwiec 2025')
   })
 
   it('does not show a user as logged in until email confirmation creates a session', async () => {
@@ -648,13 +1187,10 @@ describe('property insurance calculation modes', () => {
     const { container, unmount } = render(<App />)
     const view = within(container)
 
-    const calculationTypeSelect = view.getByRole('combobox', {
-      name: 'Sposób naliczania ubezpieczenia nieruchomości',
-    }) as HTMLSelectElement
-    expect(calculationTypeSelect.value).toBe('percentage')
+    expect(calculationTypeButton(view, 'Sposób naliczania ubezpieczenia nieruchomości', 'percentage').getAttribute('aria-pressed')).toBe('true')
 
     const rateInput = view.getByLabelText('Stawka ubezpieczenia nieruchomości') as HTMLInputElement
-    const sumInput = view.getByLabelText('Suma ubezpieczenia nieruchomości') as HTMLInputElement
+    const sumInput = view.getByLabelText('Składka ubezpieczenia nieruchomości') as HTMLInputElement
     const frequencySelect = view.getByLabelText(
       'Częstotliwość składki ubezpieczenia nieruchomości',
     ) as HTMLSelectElement
@@ -679,15 +1215,12 @@ describe('property insurance calculation modes', () => {
     const { container, unmount } = render(<App />)
     const view = within(container)
 
-    const calculationTypeSelect = view.getByRole('combobox', {
-      name: 'Sposób naliczania ubezpieczenia nieruchomości',
-    })
-    fireEvent.change(calculationTypeSelect, { target: { value: 'amount' } })
+    chooseCalculationType(view, 'Sposób naliczania ubezpieczenia nieruchomości', 'amount')
 
     expect(view.queryByLabelText('Stawka ubezpieczenia nieruchomości')).toBeNull()
     expect(view.queryByLabelText('Podstawa kalkulacji')).toBeNull()
 
-    const sumInput = view.getByLabelText('Suma ubezpieczenia nieruchomości') as HTMLInputElement
+    const sumInput = view.getByLabelText('Składka ubezpieczenia nieruchomości') as HTMLInputElement
     const frequencySelect = view.getByLabelText(
       'Częstotliwość składki ubezpieczenia nieruchomości',
     ) as HTMLSelectElement
@@ -707,12 +1240,9 @@ describe('property insurance calculation modes', () => {
     const { container, unmount } = render(<App />)
     const view = within(container)
 
-    const calculationTypeSelect = view.getByRole('combobox', {
-      name: 'Sposób naliczania ubezpieczenia nieruchomości',
-    })
-    fireEvent.change(calculationTypeSelect, { target: { value: 'amount' } })
+    chooseCalculationType(view, 'Sposób naliczania ubezpieczenia nieruchomości', 'amount')
 
-    const sumInput = view.getByLabelText('Suma ubezpieczenia nieruchomości') as HTMLInputElement
+    const sumInput = view.getByLabelText('Składka ubezpieczenia nieruchomości') as HTMLInputElement
     const frequencySelect = view.getByLabelText(
       'Częstotliwość składki ubezpieczenia nieruchomości',
     ) as HTMLSelectElement
@@ -721,7 +1251,7 @@ describe('property insurance calculation modes', () => {
     fireEvent.change(frequencySelect, { target: { value: 'annual' } })
 
     // Month 2 additional costs: life insurance 200 + property insurance (1200 / 12 = 100) = 300 zł
-    const rows = container.querySelectorAll('.table-wrap tbody tr')
+    const rows = container.querySelectorAll('.schedule-row')
     expect(rows.length).toBeGreaterThan(1)
     // In row 2 (index 1), Koszty dodatkowe column (index 6) should show 300,00 zł
     const cells = rows[1].querySelectorAll('td')
@@ -736,10 +1266,7 @@ describe('life insurance calculation modes', () => {
     const { container, unmount } = render(<App />)
     const view = within(container)
 
-    const calculationTypeSelect = view.getByRole('combobox', {
-      name: 'Sposób naliczania ubezpieczenia na życie',
-    }) as HTMLSelectElement
-    expect(calculationTypeSelect.value).toBe('amount')
+    expect(calculationTypeButton(view, 'Sposób naliczania ubezpieczenia na życie', 'amount').getAttribute('aria-pressed')).toBe('true')
 
     const premiumInput = view.getByLabelText(
       'Składka miesięczna ubezpieczenia na życie',
@@ -764,10 +1291,7 @@ describe('life insurance calculation modes', () => {
     const { container, unmount } = render(<App />)
     const view = within(container)
 
-    const calculationTypeSelect = view.getByRole('combobox', {
-      name: 'Sposób naliczania ubezpieczenia na życie',
-    })
-    fireEvent.change(calculationTypeSelect, { target: { value: 'percentage' } })
+    chooseCalculationType(view, 'Sposób naliczania ubezpieczenia na życie', 'percentage')
 
     const rateInput = view.getByLabelText('Stawka ubezpieczenia na życie') as HTMLInputElement
     const premiumInput = view.getByLabelText(
@@ -796,20 +1320,14 @@ describe('life insurance calculation modes', () => {
     const view = within(container)
 
     // Set life insurance to percentage mode
-    const calculationTypeSelect = view.getByRole('combobox', {
-      name: 'Sposób naliczania ubezpieczenia na życie',
-    })
-    fireEvent.change(calculationTypeSelect, { target: { value: 'percentage' } })
+    chooseCalculationType(view, 'Sposób naliczania ubezpieczenia na życie', 'percentage')
 
     // Set property insurance to amount mode with 0 to isolate life insurance in additional costs
-    const propertyCalcSelect = view.getByRole('combobox', {
-      name: 'Sposób naliczania ubezpieczenia nieruchomości',
-    })
-    fireEvent.change(propertyCalcSelect, { target: { value: 'amount' } })
-    const propertySumInput = view.getByLabelText('Suma ubezpieczenia nieruchomości') as HTMLInputElement
+    chooseCalculationType(view, 'Sposób naliczania ubezpieczenia nieruchomości', 'amount')
+    const propertySumInput = view.getByLabelText('Składka ubezpieczenia nieruchomości') as HTMLInputElement
     fireEvent.change(propertySumInput, { target: { value: '0' } })
 
-    const rows = container.querySelectorAll('.table-wrap tbody tr')
+    const rows = container.querySelectorAll('.schedule-row')
     expect(rows.length).toBeGreaterThan(12)
 
     // Row 2 (month 2, index 1) vs Row 12 (month 12, index 11)

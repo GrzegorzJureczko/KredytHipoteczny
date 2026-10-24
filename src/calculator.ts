@@ -12,6 +12,13 @@ export interface RateChangeEntry {
   rate: number
 }
 
+export interface RecurringExtraPaymentEntry {
+  amount: number
+  startDate?: string
+  endDate?: string
+  effect?: ExtraPaymentMode
+}
+
 export interface LoanInput {
   loanAmount: number
   annualRate: number
@@ -23,6 +30,7 @@ export interface LoanInput {
   extraMonthlyPaymentStartDate?: string
   extraPayments?: ExtraPaymentEntry[]
   extraPaymentMode?: ExtraPaymentMode
+  recurringExtraPayments?: RecurringExtraPaymentEntry[]
   startMonth?: number
 }
 
@@ -60,6 +68,10 @@ const calculatePaymentForBalance = (
   }
 
   const monthlyRate = annualRate / 100 / 12
+
+  if (monthlyRate === 0) {
+    return balance / monthsRemaining
+  }
 
   if (repaymentType === 'annuity') {
     return (
@@ -122,7 +134,8 @@ const getEffectiveAnnualRate = (monthDate: Date, baseRate: number, rateChanges: 
     }
 
     if (changeDate <= monthDate) {
-      effectiveRate = Number(change.rate) || baseRate
+      const changeRate = Number(change.rate)
+      effectiveRate = Number.isFinite(changeRate) ? changeRate : baseRate
     }
   }
 
@@ -137,7 +150,6 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
   const extraPaymentMode = input.extraPaymentMode ?? 'reduceTerm'
   const startMonth = Math.max(1, Math.round(Number(input.startMonth) || 1))
   const loanStartDate = parseDate(input.loanStartDate) ?? new Date()
-  const monthlyRecurringStartDate = parseDate(input.extraMonthlyPaymentStartDate)
   const extraPayments = Array.isArray(input.extraPayments) ? input.extraPayments : []
   const rateChanges = Array.isArray(input.rateChanges) ? input.rateChanges : []
 
@@ -170,13 +182,34 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
     reduceInstallment: 0,
   }))
 
+  const recurringPayments: RecurringExtraPaymentEntry[] = [
+    ...(extraMonthlyPayment > 0
+      ? [
+          {
+            amount: extraMonthlyPayment,
+            startDate: input.extraMonthlyPaymentStartDate,
+            effect: extraPaymentMode,
+          },
+        ]
+      : []),
+    ...(Array.isArray(input.recurringExtraPayments) ? input.recurringExtraPayments : []),
+  ]
+
   scheduleDates.forEach((date, index) => {
-    if (
-      extraMonthlyPayment > 0 &&
-      ((monthlyRecurringStartDate && toMonthKey(date) >= toMonthKey(monthlyRecurringStartDate)) ||
-        (!monthlyRecurringStartDate && index + 1 >= startMonth))
-    ) {
-      extraPaymentsByMonth[index][extraPaymentMode] += extraMonthlyPayment
+    const monthKey = toMonthKey(date)
+
+    for (const recurring of recurringPayments) {
+      const amount = Math.max(0, Number(recurring.amount) || 0)
+      const recurringStart = parseDate(recurring.startDate)
+      const recurringEnd = parseDate(recurring.endDate)
+      const hasStarted = recurringStart
+        ? monthKey >= toMonthKey(recurringStart)
+        : index + 1 >= startMonth
+      const hasEnded = recurringEnd ? monthKey > toMonthKey(recurringEnd) : false
+
+      if (amount > 0 && hasStarted && !hasEnded) {
+        extraPaymentsByMonth[index][recurring.effect ?? 'reduceTerm'] += amount
+      }
     }
   })
 
