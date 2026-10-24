@@ -538,8 +538,12 @@ describe('save button behavior', () => {
     await loadFirstSavedCalculation()
 
     const row = document.querySelector('.row-with-note') as HTMLElement
-    expect((row.querySelector('input') as HTMLInputElement).value).toBe('2.5')
-    expect(row.textContent).toContain('4,5%')
+    const [wiborInput, marginInput, rateInput] = Array.from(
+      row.querySelectorAll('input'),
+    ) as HTMLInputElement[]
+    expect(wiborInput.value).toBe('2.5')
+    expect(marginInput.value).toBe('2')
+    expect(rateInput.value).toBe('4.5')
   })
 
   it('tells the user when a saved calculation cannot be read', async () => {
@@ -722,6 +726,13 @@ describe('loan form details', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmian\u0119' }))
     fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmian\u0119' }))
 
+    // A new change defaults to the month after the previous one, so move it back
+    const [firstRow, secondRow] = getRateChangeRows()
+    const firstSelects = firstRow.querySelectorAll('select')
+    const secondSelects = secondRow.querySelectorAll('select')
+    fireEvent.change(secondSelects[1], { target: { value: firstSelects[1].value } })
+    fireEvent.change(secondSelects[0], { target: { value: firstSelects[0].value } })
+
     expect(getRateChangeRows()[0].textContent).toContain('tym samym miesi\u0105cu')
     expect(getRateChangeRows()[1].textContent).toContain('tym samym miesi\u0105cu')
   })
@@ -809,22 +820,56 @@ describe('loan form details', () => {
     expect(document.querySelectorAll('.extra-payment-row.is-recurring')).toHaveLength(0)
   })
 
-  it('enters rate changes as a new WIBOR and shows the resulting rate', () => {
+  it('edits WIBOR and margin of a rate change and shows the resulting rate', () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmianę' }))
     const row = getRateChangeRows()[0] as HTMLElement
-    const wiborInput = row.querySelector('input') as HTMLInputElement
+    const [wiborInput, marginInput, rateInput] = Array.from(
+      row.querySelectorAll('input'),
+    ) as HTMLInputElement[]
 
-    // Starts from the current WIBOR (2,7%) with margin 2,5%
+    // Starts from the current WIBOR (2,7%) and margin (2,5%)
     expect(wiborInput.value).toBe('2.7')
-    expect(row.textContent).toContain('5,2%')
+    expect(marginInput.value).toBe('2.5')
+    expect(rateInput.value).toBe('5.2')
+    expect(rateInput.readOnly).toBe(true)
 
     fireEvent.change(wiborInput, { target: { value: '3.2' } })
-    expect(row.textContent).toContain('5,7%')
+    expect(rateInput.value).toBe('5.7')
 
-    fireEvent.change(getInputByLabel('Marża'), { target: { value: '2' } })
-    expect(row.textContent).toContain('5,2%')
+    fireEvent.change(marginInput, { target: { value: '2' } })
+    expect(rateInput.value).toBe('5.2')
+
+    // The margin at the top of the page is not affected
+    expect(getInputByLabel('Marża').value).toBe('2.5')
+  })
+
+  it('starts every new rate change from the previous one, one month later', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmianę' }))
+    const [firstWibor, firstMargin] = Array.from(
+      getRateChangeRows()[0].querySelectorAll('input'),
+    ) as HTMLInputElement[]
+    fireEvent.change(firstWibor, { target: { value: '3.4' } })
+    fireEvent.change(firstMargin, { target: { value: '2.1' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmianę' }))
+
+    const [first, second] = getRateChangeRows()
+    const [secondWibor, secondMargin, secondRate] = Array.from(
+      second.querySelectorAll('input'),
+    ) as HTMLInputElement[]
+    expect(secondWibor.value).toBe('3.4')
+    expect(secondMargin.value).toBe('2.1')
+    expect(secondRate.value).toBe('5.5')
+
+    const monthIndexOf = (row: Element) => {
+      const selects = row.querySelectorAll('select')
+      return Number((selects[1] as HTMLSelectElement).value) * 12 + Number((selects[0] as HTMLSelectElement).value)
+    }
+    expect(monthIndexOf(second) - monthIndexOf(first)).toBe(1)
   })
 
   it('opens a field tooltip on tap and closes it when tapping elsewhere', () => {
@@ -1043,7 +1088,7 @@ describe('repayment schedule', () => {
       expect(rowsWithTag('Ostatnia rata')).toHaveLength(1)
     })
 
-    it('marks the month of a rate change but not the first month', () => {
+    it('does not mark months where the rate changes', () => {
       render(<App />)
 
       fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmian\u0119' }))
@@ -1051,10 +1096,11 @@ describe('repayment schedule', () => {
         target: { value: '4' },
       })
 
-      const tagged = rowsWithTag('Zmiana stopy')
-      expect(tagged).toHaveLength(1)
-      expect(tagged[0]).not.toBe(document.querySelector('.schedule-row'))
-      expect(tagged[0].classList.contains('has-event')).toBe(true)
+      const rows = Array.from(document.querySelectorAll('.schedule-row'))
+      const tagged = rows.filter((row) => row.querySelector('.event-tag'))
+
+      expect(document.querySelectorAll('.schedule-row td.is-unchanged').length).toBe(rows.length - 2)
+      expect(tagged).toEqual([rows[rows.length - 1]])
     })
 
     it('marks the month of a one-time overpayment only when an amount is paid', () => {

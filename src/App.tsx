@@ -32,6 +32,7 @@ type RateChangeEntry = {
   id: number
   date: string
   wibor: number
+  margin: number
 }
 
 type RegularOverpaymentEntry = {
@@ -105,6 +106,11 @@ const getDateOffsetMonths = (offsetMonths: number) => {
 const addMonthsToDate = (value: string, months: number) => {
   const { year, month } = getMonthYearParts(value)
   return toLocalDateString(new Date(year, month - 1 + months, 1))
+}
+
+const getMonthIndex = (value: string) => {
+  const { year, month } = getMonthYearParts(value)
+  return year * 12 + month
 }
 
 const getAnnualRateFromSplit = (wibor: number, margin: number) =>
@@ -436,7 +442,7 @@ type ConfirmRequest = {
 }
 
 type ScheduleEvent = {
-  key: 'rate' | 'onetime' | 'regularStart' | 'regularEnd' | 'last'
+  key: 'onetime' | 'regularStart' | 'regularEnd' | 'last'
   label: string
 }
 
@@ -446,9 +452,9 @@ const buildLoanInput = (source: FormState): LoanInput => ({
   termMonths: source.years * 12,
   repaymentType: source.repaymentType,
   loanStartDate: source.loanStartDate,
-  rateChanges: source.rateChanges.map(({ date, wibor }) => ({
+  rateChanges: source.rateChanges.map(({ date, wibor, margin }) => ({
     date,
-    rate: getAnnualRateFromSplit(wibor, source.margin),
+    rate: getAnnualRateFromSplit(wibor, margin),
   })),
   recurringExtraPayments: source.regularOverpayments.map(
     ({ amount, startDate, endDate, effect }) => ({
@@ -499,11 +505,16 @@ const payloadToFormState = (payload: SavedCalculationPayload): FormState => {
     rate: totalRate,
     wibor,
     margin,
-    rateChanges: (savedRateChanges ?? []).map((entry) => ({
-      id: entry.id,
-      date: entry.date,
-      wibor: entry.wibor ?? Number(((entry.rate ?? totalRate) - margin).toFixed(4)),
-    })),
+    rateChanges: (savedRateChanges ?? []).map((entry) => {
+      const entryMargin = entry.margin ?? margin
+
+      return {
+        id: entry.id,
+        date: entry.date,
+        wibor: entry.wibor ?? Number(((entry.rate ?? totalRate) - entryMargin).toFixed(4)),
+        margin: entryMargin,
+      }
+    }),
     regularOverpayments,
     extraPayments: rest.extraPayments ?? [],
   }
@@ -1266,20 +1277,31 @@ function App() {
     )
 
   const addRateChange = () => {
-    setForm((current) => ({
-      ...current,
-      rateChanges: [
-        ...current.rateChanges,
-        {
-          id: Date.now() + Math.random(),
-          date: getDateOffsetMonths(12),
-          wibor: current.wibor,
-        },
-      ],
-    }))
+    setForm((current) => {
+      const previous = [...current.rateChanges].sort(
+        (a, b) => getMonthIndex(a.date) - getMonthIndex(b.date),
+      )[current.rateChanges.length - 1]
+
+      return {
+        ...current,
+        rateChanges: [
+          ...current.rateChanges,
+          {
+            id: Date.now() + Math.random(),
+            date: previous ? addMonthsToDate(previous.date, 1) : getDateOffsetMonths(12),
+            wibor: previous?.wibor ?? current.wibor,
+            margin: previous?.margin ?? current.margin,
+          },
+        ],
+      }
+    })
   }
 
-  const updateRateChange = (id: number, field: 'date' | 'wibor', value: string | number) => {
+  const updateRateChange = (
+    id: number,
+    field: 'date' | 'wibor' | 'margin',
+    value: string | number,
+  ) => {
     setForm((current) => ({
       ...current,
       rateChanges: current.rateChanges.map((entry) =>
@@ -1380,10 +1402,6 @@ function App() {
 
     const rowMonthIndex = paymentDate.getFullYear() * 12 + paymentDate.getMonth() + 1
     const events: ScheduleEvent[] = []
-
-    if (index > 0 && row.annualRate !== summary.schedule[index - 1].annualRate) {
-      events.push({ key: 'rate', label: 'Zmiana stopy' })
-    }
 
     if (
       form.extraPayments.some(
@@ -2340,16 +2358,23 @@ function App() {
               </div>
 
               {form.rateChanges.length === 0 ? (
-                <p className="empty-state">Brak zmian oprocentowania. Dodaj datę i nowy WIBOR, aby zmienić odsetki od wybranego momentu. Marża zostaje bez zmian.</p>
+                <p className="empty-state">Brak zmian oprocentowania. Dodaj zmianę i ustaw datę, WIBOR oraz marżę, aby zmienić odsetki od wybranego momentu. Każda kolejna zmiana startuje od wartości poprzedniej.</p>
               ) : (
                 sortedRateChanges.map((entry) => {
                   const warning = getRateChangeWarning(entry)
 
                   return (
                     <div key={entry.id} className="row-with-note">
-                      <div className="extra-payment-row">
+                      <div className="extra-payment-row is-rate-change">
                         <label>
-                          <span>Nowy WIBOR</span>
+                          <span>Data zmiany</span>
+                          <MonthYearInput
+                            value={entry.date}
+                            onChange={(value) => updateRateChange(entry.id, 'date', value)}
+                          />
+                        </label>
+                        <label>
+                          <span>WIBOR</span>
                           <UnitInput
                             unit="%"
                             min="0"
@@ -2359,10 +2384,24 @@ function App() {
                           />
                         </label>
                         <label>
-                          <span>Data zmiany</span>
-                          <MonthYearInput
-                            value={entry.date}
-                            onChange={(value) => updateRateChange(entry.id, 'date', value)}
+                          <span>Marża</span>
+                          <UnitInput
+                            unit="%"
+                            min="0"
+                            step="0.1"
+                            value={entry.margin}
+                            onValueChange={(value) => updateRateChange(entry.id, 'margin', value)}
+                          />
+                        </label>
+                        <label>
+                          <span>Oprocentowanie</span>
+                          <UnitInput
+                            unit="%"
+                            min="0"
+                            step="0.1"
+                            value={getAnnualRateFromSplit(entry.wibor, entry.margin)}
+                            readOnly
+                            aria-readonly="true"
                           />
                         </label>
                         <button
@@ -2374,11 +2413,6 @@ function App() {
                           ×
                         </button>
                       </div>
-                      <p className="field-note">
-                        Oprocentowanie po zmianie:{' '}
-                        <strong>{formatPercent(getAnnualRateFromSplit(entry.wibor, form.margin))}</strong>{' '}
-                        (WIBOR + marża {formatPercent(form.margin)})
-                      </p>
                       {warning ? <p className="row-note">{warning}</p> : null}
                     </div>
                   )

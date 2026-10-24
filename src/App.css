@@ -1738,11 +1738,6 @@ input[type='number']::-webkit-outer-spin-button {
   text-transform: uppercase;
 }
 
-.event-tag.event-rate {
-  border-color: var(--brand-red);
-  color: var(--brand-red);
-}
-
 .event-tag.event-onetime {
   background: #101010;
   color: #fff;
@@ -1931,6 +1926,20 @@ input[type='number']::-webkit-outer-spin-button {
   grid-template-columns: 1fr 1fr auto;
 }
 
+.extra-payment-row.is-rate-change {
+  grid-template-columns: 1fr 1fr 1fr auto;
+}
+
+.extra-payment-row.is-rate-change > label:first-child {
+  grid-column: 1 / 4;
+}
+
+.extra-payment-row.is-rate-change > .icon-button {
+  grid-column: 4;
+  grid-row: 1;
+  align-self: end;
+}
+
 .extra-payment-row.is-recurring > .icon-button {
   grid-column: 3;
   grid-row: 2;
@@ -1963,6 +1972,21 @@ input[type='checkbox'] {
 
   .extra-payment-row.is-recurring > .icon-button {
     grid-column: 1;
+    grid-row: auto;
+    justify-self: end;
+  }
+
+  .extra-payment-row.is-rate-change {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .extra-payment-row.is-rate-change > label:first-child,
+  .extra-payment-row.is-rate-change > label:nth-child(4) {
+    grid-column: 1 / -1;
+  }
+
+  .extra-payment-row.is-rate-change > .icon-button {
+    grid-column: 1 / -1;
     grid-row: auto;
     justify-self: end;
   }
