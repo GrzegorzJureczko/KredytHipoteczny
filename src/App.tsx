@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type InputHTMLAttributes,
+} from 'react'
 import './App.css'
 import { calculateLoanSummary, type ExtraPaymentMode, type RepaymentType } from './calculator'
 import { getAuthErrorMessage } from './authError'
@@ -98,7 +106,7 @@ const initialForm: FormState = {
   years: 30,
   repaymentType: 'annuity',
   rateChanges: [],
-  extraMonthlyPayment: 500,
+  extraMonthlyPayment: 0,
   extraMonthlyPaymentStartDate: getNextMonthDate(),
   extraPaymentMode: 'reduceTerm',
   extraPayments: [],
@@ -193,6 +201,122 @@ const FieldTooltip = ({ id, text }: { id: string; text: string }) => (
     </span>
   </span>
 )
+
+const groupDigits = (digits: string) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')
+
+const formatMoneyDraft = (draft: string) => {
+  const [integerPart, decimalPart] = draft.split('.')
+  const grouped = groupDigits(integerPart)
+
+  return decimalPart === undefined ? grouped : `${grouped},${decimalPart}`
+}
+
+const sanitizeMoneyInput = (raw: string) => {
+  const cleaned = raw.replace(/,/g, '.').replace(/[^\d.]/g, '')
+  const [integerPart, ...decimalParts] = cleaned.split('.')
+  const integerDigits = integerPart.replace(/^0+(?=\d)/, '')
+
+  if (decimalParts.length === 0) {
+    return integerDigits
+  }
+
+  return `${integerDigits || '0'}.${decimalParts.join('').slice(0, 2)}`
+}
+
+const pluralize = (count: number, one: string, few: string, many: string) => {
+  const lastTwo = count % 100
+  const last = count % 10
+
+  if (count === 1) {
+    return one
+  }
+
+  return last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14) ? few : many
+}
+
+type UnitInputProps = Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  'value' | 'onChange' | 'onBlur' | 'type'
+> & {
+  unit: string
+  value: number
+  onValueChange?: (value: number) => void
+}
+
+const UnitInput = ({
+  unit,
+  value,
+  onValueChange,
+  min,
+  step,
+  ...inputProps
+}: UnitInputProps) => {
+  const isMoney = unit === 'zł'
+  const typeProps = isMoney
+    ? ({ type: 'text', inputMode: 'decimal', autoComplete: 'off' } as const)
+    : ({ type: 'number', min, step } as const)
+  const [draft, setDraft] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const pendingCaret = useRef<number | null>(null)
+  const displayValue = isMoney
+    ? formatMoneyDraft(
+        draft !== null && Number(draft) === value ? draft : String(Number(value.toFixed(2))),
+      )
+    : draft !== null && Number(draft) === value
+      ? draft
+      : String(value)
+
+  useLayoutEffect(() => {
+    const input = inputRef.current
+    const caretSymbols = pendingCaret.current
+
+    if (!input || caretSymbols === null) {
+      return
+    }
+
+    let position = 0
+    let seen = 0
+
+    while (position < input.value.length && seen < caretSymbols) {
+      if (/[\d,]/.test(input.value[position])) {
+        seen += 1
+      }
+      position += 1
+    }
+
+    input.setSelectionRange(position, position)
+    pendingCaret.current = null
+  })
+
+  return (
+    <span className="input-unit" data-unit={unit}>
+      <input
+        {...inputProps}
+        ref={inputRef}
+        {...typeProps}
+        value={displayValue}
+        onChange={(event) => {
+          const raw = event.target.value
+          const nextDraft = isMoney ? sanitizeMoneyInput(raw) : raw
+
+          if (isMoney) {
+            const caret = event.target.selectionStart ?? raw.length
+            pendingCaret.current = raw.slice(0, caret).replace(/[^\d,.]/g, '').length
+          }
+
+          setDraft(nextDraft)
+
+          if (nextDraft === '') {
+            onValueChange?.(0)
+          } else if (Number.isFinite(Number(nextDraft))) {
+            onValueChange?.(Number(nextDraft))
+          }
+        }}
+        onBlur={() => setDraft(null)}
+      />
+    </span>
+  )
+}
 
 type SavedCalculationEntry = {
   id: string
@@ -905,6 +1029,22 @@ function App() {
   const totalCost = summary.totalPaid + totalAdditionalCosts
   const monthlyBurden = summary.monthlyPayment + totalAdditionalCosts / Math.max(form.years * 12, 1)
 
+  const loanValidationMessages = [
+    form.amount <= 0 ? 'Kwota kredytu musi być większa od zera.' : null,
+    form.propertyValue > 0 && form.amount > form.propertyValue
+      ? 'Kwota kredytu przekracza wartość nieruchomości.'
+      : null,
+  ].filter((message): message is string => message !== null)
+
+  const oneTimeOverpaymentCount = form.extraPayments.length
+  const overpaymentBadgeParts = [
+    form.extraMonthlyPayment > 0 ? `${formatCurrency(form.extraMonthlyPayment)}/mies.` : null,
+    oneTimeOverpaymentCount > 0
+      ? `${oneTimeOverpaymentCount} ${pluralize(oneTimeOverpaymentCount, 'jednorazowa', 'jednorazowe', 'jednorazowych')}`
+      : null,
+  ].filter((part): part is string => part !== null)
+  const overpaymentBadge = overpaymentBadgeParts.length > 0 ? overpaymentBadgeParts.join(' + ') : 'Brak'
+
   const resetForm = () =>
     discardChangesThen(
       () => setForm(initialForm),
@@ -1398,25 +1538,33 @@ function App() {
                 Kwota kredytu
                 <FieldTooltip id="loan-amount-help" text="Całkowita kwota, którą chcesz pożyczyć" />
               </span>
-              <input
-                type="number"
+              <UnitInput
+                unit="zł"
                 min="0"
                 step="5000"
                 value={form.amount}
-                onChange={(event) => updateField('amount', Number(event.target.value))}
+                onValueChange={(value) => updateField('amount', value)}
               />
             </label>
 
             <label>
               <span>Wartość nieruchomości</span>
-              <input
-                type="number"
+              <UnitInput
+                unit="zł"
                 min="0"
                 step="5000"
                 value={form.propertyValue}
-                onChange={(event) => updateField('propertyValue', Number(event.target.value))}
+                onValueChange={(value) => updateField('propertyValue', value)}
               />
             </label>
+
+            {loanValidationMessages.length > 0 ? (
+              <div className="field-warnings full-width" role="status">
+                {loanValidationMessages.map((message) => (
+                  <p key={message}>{message}</p>
+                ))}
+              </div>
+            ) : null}
 
             <label>
               <span className="field-title">
@@ -1435,12 +1583,12 @@ function App() {
                   WIBOR
                   <FieldTooltip id="loan-rate-help" text="Roczna stopa procentowa WIBOR" />
                 </span>
-                <input
-                  type="number"
+                <UnitInput
+                  unit="%"
                   min="0"
                   step="0.1"
                   value={form.wibor}
-                  onChange={(event) => updateField('wibor', Number(event.target.value))}
+                  onValueChange={(value) => updateField('wibor', value)}
                 />
               </label>
 
@@ -1449,12 +1597,12 @@ function App() {
                   Marża
                   <FieldTooltip id="loan-margin-help" text="Marża banku dodawana do WIBOR-u" />
                 </span>
-                <input
-                  type="number"
+                <UnitInput
+                  unit="%"
                   min="0"
                   step="0.1"
                   value={form.margin}
-                  onChange={(event) => updateField('margin', Number(event.target.value))}
+                  onValueChange={(value) => updateField('margin', value)}
                 />
               </label>
 
@@ -1463,8 +1611,8 @@ function App() {
                   Oprocentowanie
                   <FieldTooltip id="loan-rate-total-help" text="Suma WIBOR-u i marży" />
                 </span>
-                <input
-                  type="number"
+                <UnitInput
+                  unit="%"
                   min="0"
                   step="0.1"
                   value={form.rate}
@@ -1511,49 +1659,52 @@ function App() {
           </div>
 
           <details className="subsection collapsible-section">
-            <summary>Koszty około-kredytowe</summary>
+            <summary>
+              Koszty około-kredytowe
+              <span className="section-badge">Łącznie {formatCurrency(totalAdditionalCosts)}</span>
+            </summary>
             <div className="field-grid compact">
               <label>
                 <span>Prowizja</span>
-                <input
-                  type="number"
+                <UnitInput
+                  unit="zł"
                   min="0"
                   step="100"
                   value={form.applicationFee}
-                  onChange={(event) => updateField('applicationFee', Number(event.target.value))}
+                  onValueChange={(value) => updateField('applicationFee', value)}
                 />
               </label>
 
               <label>
                 <span>Notariusz / dokumenty</span>
-                <input
-                  type="number"
+                <UnitInput
+                  unit="zł"
                   min="0"
                   step="100"
                   value={form.notary}
-                  onChange={(event) => updateField('notary', Number(event.target.value))}
+                  onValueChange={(value) => updateField('notary', value)}
                 />
               </label>
 
               <label>
                 <span>Wycena / ekspertyza</span>
-                <input
-                  type="number"
+                <UnitInput
+                  unit="zł"
                   min="0"
                   step="100"
                   value={form.appraisal}
-                  onChange={(event) => updateField('appraisal', Number(event.target.value))}
+                  onValueChange={(value) => updateField('appraisal', value)}
                 />
               </label>
 
               <label>
                 <span>Inne</span>
-                <input
-                  type="number"
+                <UnitInput
+                  unit="zł"
                   min="0"
                   step="100"
                   value={form.commission}
-                  onChange={(event) => updateField('commission', Number(event.target.value))}
+                  onValueChange={(value) => updateField('commission', value)}
                 />
               </label>
             </div>
@@ -1581,22 +1732,20 @@ function App() {
                   <>
                     <label>
                       <span>Stawka ubezpieczenia</span>
-                      <input
-                        type="number"
+                      <UnitInput
+                        unit="%"
                         aria-label="Stawka ubezpieczenia na życie"
                         min="0"
                         step="0.01"
                         value={form.lifeInsuranceRatePercent}
-                        onChange={(event) =>
-                          updateField('lifeInsuranceRatePercent', Number(event.target.value))
-                        }
+                        onValueChange={(value) => updateField('lifeInsuranceRatePercent', value)}
                       />
                     </label>
 
                     <label>
                       <span>Składka miesięczna</span>
-                      <input
-                        type="number"
+                      <UnitInput
+                        unit="zł"
                         aria-label="Składka miesięczna ubezpieczenia na życie"
                         min="0"
                         step="0.01"
@@ -1609,15 +1758,13 @@ function App() {
                 ) : (
                   <label>
                     <span>Składka miesięczna</span>
-                    <input
-                      type="number"
+                    <UnitInput
+                      unit="zł"
                       aria-label="Składka miesięczna ubezpieczenia na życie"
                       min="0"
                       step="10"
                       value={form.lifeInsuranceMonthlyPremium}
-                      onChange={(event) =>
-                        updateField('lifeInsuranceMonthlyPremium', Number(event.target.value))
-                      }
+                      onValueChange={(value) => updateField('lifeInsuranceMonthlyPremium', value)}
                     />
                   </label>
                 )}
@@ -1673,22 +1820,20 @@ function App() {
                   <>
                     <label>
                       <span>Stawka ubezpieczenia</span>
-                      <input
-                        type="number"
+                      <UnitInput
+                        unit="%"
                         aria-label="Stawka ubezpieczenia nieruchomości"
                         min="0"
                         step="0.01"
                         value={form.propertyInsuranceRatePercent}
-                        onChange={(event) =>
-                          updateField('propertyInsuranceRatePercent', Number(event.target.value))
-                        }
+                        onValueChange={(value) => updateField('propertyInsuranceRatePercent', value)}
                       />
                     </label>
 
                     <label>
                       <span>Suma ubezpieczenia</span>
-                      <input
-                        type="number"
+                      <UnitInput
+                        unit="zł"
                         aria-label="Suma ubezpieczenia nieruchomości"
                         min="0"
                         step="0.01"
@@ -1729,15 +1874,13 @@ function App() {
                   <>
                     <label>
                       <span>Suma ubezpieczenia</span>
-                      <input
-                        type="number"
+                      <UnitInput
+                        unit="zł"
                         aria-label="Suma ubezpieczenia nieruchomości"
                         min="0"
                         step="0.01"
                         value={form.propertyInsuranceAmount}
-                        onChange={(event) =>
-                          updateField('propertyInsuranceAmount', Number(event.target.value))
-                        }
+                        onValueChange={(value) => updateField('propertyInsuranceAmount', value)}
                       />
                     </label>
 
@@ -1761,7 +1904,14 @@ function App() {
           </details>
 
           <details className="subsection collapsible-section">
-            <summary>Zmiany oprocentowania</summary>
+            <summary>
+              Zmiany oprocentowania
+              <span className="section-badge">
+                {form.rateChanges.length === 0
+                  ? 'Brak'
+                  : `${form.rateChanges.length} ${pluralize(form.rateChanges.length, 'zmiana', 'zmiany', 'zmian')}`}
+              </span>
+            </summary>
             <div className="extra-payment-list">
               <div className="extra-payment-header">
                 <h4>Daty zmiany stopy</h4>
@@ -1777,14 +1927,12 @@ function App() {
                   <div key={entry.id} className="extra-payment-row">
                     <label>
                       <span>Nowe oprocentowanie</span>
-                      <input
-                        type="number"
+                      <UnitInput
+                        unit="%"
                         min="0"
                         step="0.1"
                         value={entry.rate}
-                        onChange={(event) =>
-                          updateRateChange(entry.id, 'rate', Number(event.target.value))
-                        }
+                        onValueChange={(value) => updateRateChange(entry.id, 'rate', value)}
                       />
                     </label>
                     <label>
@@ -1808,21 +1956,22 @@ function App() {
           </details>
 
           <details className="subsection collapsible-section">
-            <summary>Nadpłaty</summary>
+            <summary>
+              Nadpłaty
+              <span className="section-badge">{overpaymentBadge}</span>
+            </summary>
             <div className="field-grid compact overpayment-settings">
               <label>
                 <span className="field-title">
                   Regularna wpłata miesięczna
                   <FieldTooltip id="recurring-overpayment-help" text="Stała nadpłata powtarzana co miesiąc" />
                 </span>
-                <input
-                  type="number"
+                <UnitInput
+                  unit="zł"
                   min="0"
                   step="100"
                   value={form.extraMonthlyPayment}
-                  onChange={(event) =>
-                    updateField('extraMonthlyPayment', Number(event.target.value))
-                  }
+                  onValueChange={(value) => updateField('extraMonthlyPayment', value)}
                 />
               </label>
 
@@ -1869,14 +2018,12 @@ function App() {
                   <div key={payment.id} className="extra-payment-row">
                     <label>
                       <span>Kwota</span>
-                      <input
-                        type="number"
+                      <UnitInput
+                        unit="zł"
                         min="0"
                         step="100"
                         value={payment.amount}
-                        onChange={(event) =>
-                          updateExtraPayment(payment.id, 'amount', Number(event.target.value))
-                        }
+                        onValueChange={(value) => updateExtraPayment(payment.id, 'amount', value)}
                       />
                     </label>
                     <label>
@@ -2034,6 +2181,13 @@ function App() {
       </p>
     </footer>
 
+    <a className="mobile-summary-bar" href="#podsumowanie">
+      <span>
+        <small>Rata miesięczna</small>
+        <strong>{formatCurrency(summary.monthlyPayment)}</strong>
+      </span>
+      <span className="mobile-summary-link">Podsumowanie</span>
+    </a>
     {confirmRequest ? (
       <ConfirmDialog
         request={confirmRequest}

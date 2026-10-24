@@ -1390,3 +1390,118 @@ tbody tr:hover {
   justify-content: flex-end;
   gap: 10px;
 }
+
+input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.input-unit {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.input-unit input {
+  width: 100%;
+  min-width: 0;
+  padding-right: 44px;
+}
+
+.input-unit::after {
+  content: attr(data-unit);
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  color: #777;
+  font-size: 0.85rem;
+  letter-spacing: 0;
+  text-transform: none;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.field-warnings {
+  display: grid;
+  gap: 8px;
+}
+
+.field-warnings p {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 4px solid var(--brand-red);
+  background: #fff;
+  color: var(--brand-red);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.section-badge {
+  margin-left: auto;
+  color: #4a4a4a;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: none;
+}
+
+.mobile-summary-bar {
+  display: none;
+}
+
+@media (min-width: 901px) {
+  .summary-panel {
+    position: sticky;
+    top: 80px;
+    align-self: start;
+  }
+}
+
+@media (max-width: 900px) {
+  .mobile-summary-bar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px clamp(16px, 4vw, 48px);
+    border-top: 3px solid var(--brand-red);
+    background: #101010;
+    color: #fff;
+    text-decoration: none;
+  }
+
+  .mobile-summary-bar small {
+    display: block;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .mobile-summary-bar strong {
+    font-size: 1.25rem;
+    font-weight: 300;
+  }
+
+  .mobile-summary-link {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .site-footer {
+    padding-bottom: 96px;
+  }
+}
