@@ -649,6 +649,27 @@ describe('summary panel', () => {
     expect(savings?.textContent).not.toContain('Krótszy okres')
   })
 
+  it('counts additional costs only while the loan runs, matching the schedule rows', () => {
+    render(<App />)
+
+    fireEvent.change(getInputByLabel('Regularna wpłata miesięczna'), { target: { value: '3000' } })
+
+    const rows = Array.from(document.querySelectorAll('.table-wrap tbody tr'))
+    expect(rows.length).toBeLessThan(360)
+
+    const parseAmount = (text: string | null | undefined) =>
+      Number((text ?? '').replace(/[^\d,]/g, '').replace(',', '.'))
+    const scheduleCosts = rows.reduce(
+      (sum, row) => sum + parseAmount(row.querySelectorAll('td')[6].textContent),
+      0,
+    )
+    const summaryCosts = parseAmount(
+      document.querySelectorAll('.cost-legend li')[2].querySelector('strong')?.textContent,
+    )
+
+    expect(Math.abs(summaryCosts - scheduleCosts)).toBeLessThan(rows.length * 0.01)
+  })
+
   it('labels the first installment and shows the last one for decreasing installments', () => {
     render(<App />)
 

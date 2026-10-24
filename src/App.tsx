@@ -1046,17 +1046,18 @@ function App() {
   )
 
   const totalAdditionalCosts = useMemo(() => {
-    return Array.from({ length: form.years * 12 }, (_, index) => {
-      const startBalance =
-        index === 0
-          ? form.amount
-          : summary.schedule[index - 1]?.remainingBalance ?? 0
-      return getMonthlyAdditionalCost(index + 1, form, startBalance)
-    }).reduce((sum, value) => sum + value, 0)
+    return summary.schedule
+      .map((_, index) => {
+        const startBalance =
+          index === 0 ? form.amount : summary.schedule[index - 1]?.remainingBalance ?? 0
+        return getMonthlyAdditionalCost(index + 1, form, startBalance)
+      })
+      .reduce((sum, value) => sum + value, 0)
   }, [form, summary.schedule])
 
   const totalCost = summary.totalPaid + totalAdditionalCosts
-  const monthlyBurden = summary.monthlyPayment + totalAdditionalCosts / Math.max(form.years * 12, 1)
+  const monthlyBurden =
+    summary.monthlyPayment + totalAdditionalCosts / Math.max(summary.loanTermMonths, 1)
 
   const loanValidationMessages = [
     form.amount <= 0 ? 'Kwota kredytu musi być większa od zera.' : null,
