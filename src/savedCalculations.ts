@@ -14,7 +14,7 @@ export type SavedCalculationPayload = {
   margin?: number
   years: number
   repaymentType: 'annuity' | 'decreasing'
-  rateChanges: Array<{ id: number; date: string; rate?: number; wibor?: number }>
+  rateChanges: Array<{ id: number; date: string; rate?: number; wibor?: number; margin?: number }>
   extraMonthlyPayment?: number
   extraMonthlyPaymentStartDate?: string
   extraPaymentMode?: 'reduceTerm' | 'reduceInstallment'
@@ -101,6 +101,10 @@ export const normalizeSavedCalculationPayload = (
 
           if (item.wibor !== undefined) {
             rateChange.wibor = Number(item.wibor)
+          }
+
+          if (item.margin !== undefined) {
+            rateChange.margin = Number(item.margin)
           }
 
           return rateChange
