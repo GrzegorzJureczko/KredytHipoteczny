@@ -13,6 +13,8 @@ const getInputByLabel = (labelText: string) =>
 
 const digitsOf = (input: HTMLInputElement) => input.value.replace(/\s/g, '')
 
+const getSummaryText = () => document.querySelector('.summary-panel')?.textContent ?? ''
+
 const baseSavedPayload = {
   amount: 300000,
   rate: 5.2,
@@ -494,7 +496,7 @@ describe('form usability', () => {
   it('starts without a hidden overpayment so the default term is the full loan term', () => {
     render(<App />)
 
-    expect(screen.getByText('360 mies.')).toBeTruthy()
+    expect(getSummaryText()).toContain('30 lat')
     expect(getSectionBadge('Nadpłaty')).toBe('Brak')
     expect(getSectionBadge('Zmiany oprocentowania')).toBe('Brak')
   })
@@ -575,6 +577,89 @@ describe('form usability', () => {
     expect(unitsOf('WIBOR')).toBe('%')
     expect(unitsOf('Marża')).toBe('%')
     expect(unitsOf('Prowizja')).toBe('zł')
+  })
+})
+
+describe('summary panel', () => {
+  const setStartDate = (year: string, month: string) => {
+    fireEvent.change(screen.getAllByRole('combobox', { name: 'Rok' })[0], { target: { value: year } })
+    fireEvent.change(screen.getAllByRole('combobox', { name: 'Miesiąc' })[0], {
+      target: { value: month },
+    })
+  }
+
+  it('shows the repayment period together with the month of the last payment', () => {
+    render(<App />)
+    setStartDate('2030', '1')
+
+    const text = getSummaryText()
+    expect(text).toContain('30 lat')
+    expect(text).toContain('do: grudzień 2059')
+  })
+
+  it('splits the total cost into principal, interest and additional costs that add up', () => {
+    render(<App />)
+
+    const legendRows = Array.from(document.querySelectorAll('.cost-legend li'))
+    expect(legendRows.map((row) => row.querySelector('span:nth-of-type(2)')?.textContent)).toEqual([
+      'Kapitał',
+      'Odsetki',
+      'Koszty dodatkowe',
+    ])
+    expect(document.querySelectorAll('.cost-bar-segment')).toHaveLength(3)
+
+    const parseAmount = (text: string | null | undefined) =>
+      Number((text ?? '').replace(/[^\d,]/g, '').replace(',', '.'))
+    const [principal, interest, additional] = legendRows.map((row) =>
+      parseAmount(row.querySelector('strong')?.textContent),
+    )
+    const total = parseAmount(document.querySelector('.cost-breakdown-header strong')?.textContent)
+
+    // Default loan: 350 000 zł fully repaid
+    expect(Math.abs(principal - 350000)).toBeLessThan(0.02)
+    expect(Math.abs(principal + interest + additional - total)).toBeLessThan(0.02)
+  })
+
+  it('hides the overpayment effect without overpayments and shows interest saved with them', () => {
+    render(<App />)
+
+    expect(document.querySelector('.savings-box')).toBeNull()
+
+    fireEvent.change(getInputByLabel('Regularna wpłata miesięczna'), { target: { value: '1000' } })
+
+    const savings = document.querySelector('.savings-box')
+    expect(savings?.textContent).toContain('Mniej odsetek')
+    expect(savings?.textContent).toContain('Krótszy okres')
+  })
+
+  it('does not claim a shorter period when a one-off overpayment only lowers the installment', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj nadpłatę' }))
+
+    const row = document.querySelector('.extra-payment-row') as HTMLElement
+    fireEvent.change(row.querySelector('input') as HTMLInputElement, { target: { value: '100000' } })
+    const effectSelects = row.querySelectorAll('select')
+    fireEvent.change(effectSelects[effectSelects.length - 1], {
+      target: { value: 'reduceInstallment' },
+    })
+
+    const savings = document.querySelector('.savings-box')
+    expect(savings?.textContent).toContain('Mniej odsetek')
+    expect(savings?.textContent).not.toContain('Krótszy okres')
+  })
+
+  it('labels the first installment and shows the last one for decreasing installments', () => {
+    render(<App />)
+
+    expect(getSummaryText()).toContain('Rata miesięczna')
+    expect(getSummaryText()).not.toContain('Ostatnia rata')
+
+    const repaymentSelect = screen.getByDisplayValue('Równe')
+    fireEvent.change(repaymentSelect, { target: { value: 'decreasing' } })
+
+    expect(getSummaryText()).toContain('Pierwsza rata')
+    expect(getSummaryText()).toContain('Ostatnia rata')
   })
 })
 

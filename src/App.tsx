@@ -234,6 +234,22 @@ const pluralize = (count: number, one: string, few: string, many: string) => {
   return last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14) ? few : many
 }
 
+const formatDuration = (months: number) => {
+  const years = Math.floor(months / 12)
+  const restMonths = months % 12
+  const parts: string[] = []
+
+  if (years > 0) {
+    parts.push(`${years} ${pluralize(years, 'rok', 'lata', 'lat')}`)
+  }
+
+  if (restMonths > 0 || years === 0) {
+    parts.push(`${restMonths} mies.`)
+  }
+
+  return parts.join(' ')
+}
+
 type UnitInputProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,
   'value' | 'onChange' | 'onBlur' | 'type'
@@ -1016,6 +1032,19 @@ function App() {
 
   const summary = useMemo(() => calculateLoanSummary(buildLoanInput(form)), [form])
 
+  const hasOverpayments =
+    form.extraMonthlyPayment > 0 || form.extraPayments.some((payment) => payment.amount > 0)
+
+  const baselineSummary = useMemo(
+    () =>
+      hasOverpayments
+        ? calculateLoanSummary(
+            buildLoanInput({ ...form, extraMonthlyPayment: 0, extraPayments: [] }),
+          )
+        : null,
+    [form, hasOverpayments],
+  )
+
   const totalAdditionalCosts = useMemo(() => {
     return Array.from({ length: form.years * 12 }, (_, index) => {
       const startBalance =
@@ -1147,6 +1176,30 @@ function App() {
       return acc
     }, {}),
   )
+
+  const firstPayment = summary.schedule[0]?.payment ?? summary.monthlyPayment
+  const lastRegularPayment =
+    summary.schedule.length > 1
+      ? summary.schedule[summary.schedule.length - 2].payment
+      : firstPayment
+  const paymentChanges = Math.abs(lastRegularPayment - firstPayment) >= 1
+  const paymentLabel =
+    form.repaymentType === 'decreasing' || paymentChanges ? 'Pierwsza rata' : 'Rata miesięczna'
+  const endMonthLabel = scheduleWithDates[scheduleWithDates.length - 1]?.monthLabel
+
+  const costParts = [
+    { key: 'principal', label: 'Kapitał', value: Math.max(0, summary.totalPaid - summary.totalInterest) },
+    { key: 'interest', label: 'Odsetki', value: summary.totalInterest },
+    { key: 'additional', label: 'Koszty dodatkowe', value: totalAdditionalCosts },
+  ]
+  const costPartsTotal = costParts.reduce((sum, part) => sum + part.value, 0)
+
+  const interestSaved = baselineSummary
+    ? Math.max(0, baselineSummary.totalInterest - summary.totalInterest)
+    : 0
+  const monthsSaved = baselineSummary
+    ? Math.max(0, baselineSummary.loanTermMonths - summary.loanTermMonths)
+    : 0
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => {
@@ -2069,37 +2122,71 @@ function App() {
 
           <div className="summary-cards">
             <article className="summary-highlight">
-              <span>Rata miesięczna</span>
-              <strong>{formatCurrency(summary.monthlyPayment)}</strong>
+              <span>{paymentLabel}</span>
+              <strong>{formatCurrency(firstPayment)}</strong>
+              {paymentChanges ? (
+                <small>Ostatnia rata: {formatCurrency(lastRegularPayment)}</small>
+              ) : null}
             </article>
             <article>
-              <span>Łącznie odsetki</span>
-              <strong>{formatCurrency(summary.totalInterest)}</strong>
-            </article>
-            <article>
-              <span>Całkowity koszt</span>
-              <strong>{formatCurrency(totalCost)}</strong>
+              <span>Okres spłaty</span>
+              <strong>{formatDuration(summary.loanTermMonths)}</strong>
+              {endMonthLabel ? <small>do: {endMonthLabel}</small> : null}
             </article>
             <article>
               <span>Obciążenie miesięczne</span>
               <strong>{formatCurrency(monthlyBurden)}</strong>
+              <small>rata + średnie koszty dodatkowe</small>
             </article>
           </div>
 
-          <div className="kpi-row">
-            <div>
-              <small>Koszty dodatkowe</small>
-              <strong>{formatCurrency(totalAdditionalCosts)}</strong>
+          <div className="cost-breakdown">
+            <div className="cost-breakdown-header">
+              <span>Całkowity koszt</span>
+              <strong>{formatCurrency(totalCost)}</strong>
             </div>
-            <div>
-              <small>Skumulowana spłata</small>
-              <strong>{formatCurrency(summary.totalPaid)}</strong>
+            <div
+              className="cost-bar"
+              role="img"
+              aria-label="Struktura kosztu: kapitał, odsetki i koszty dodatkowe"
+            >
+              {costParts.map((part) => (
+                <span
+                  key={part.key}
+                  className={`cost-bar-segment cost-tone-${part.key}`}
+                  style={{ flexGrow: part.value }}
+                />
+              ))}
             </div>
-            <div>
-              <small>Okres spłaty</small>
-              <strong>{summary.loanTermMonths} mies.</strong>
-            </div>
+            <ul className="cost-legend">
+              {costParts.map((part) => (
+                <li key={part.key}>
+                  <span className={`cost-dot cost-tone-${part.key}`} aria-hidden="true" />
+                  <span>{part.label}</span>
+                  <strong>{formatCurrency(part.value)}</strong>
+                  <small>
+                    {costPartsTotal > 0 ? Math.round((part.value / costPartsTotal) * 100) : 0}%
+                  </small>
+                </li>
+              ))}
+            </ul>
           </div>
+
+          {hasOverpayments && (interestSaved > 0 || monthsSaved > 0) ? (
+            <div className="savings-box">
+              <h3>Efekt nadpłat</h3>
+              <div>
+                <span>Mniej odsetek</span>
+                <strong>{formatCurrency(interestSaved)}</strong>
+              </div>
+              {monthsSaved > 0 ? (
+                <div>
+                  <span>Krótszy okres</span>
+                  <strong>{formatDuration(monthsSaved)}</strong>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </aside>
       </main>
 
@@ -2183,8 +2270,8 @@ function App() {
 
     <a className="mobile-summary-bar" href="#podsumowanie">
       <span>
-        <small>Rata miesięczna</small>
-        <strong>{formatCurrency(summary.monthlyPayment)}</strong>
+        <small>{paymentLabel}</small>
+        <strong>{formatCurrency(firstPayment)}</strong>
       </span>
       <span className="mobile-summary-link">Podsumowanie</span>
     </a>
