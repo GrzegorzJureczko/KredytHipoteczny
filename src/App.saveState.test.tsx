@@ -13,6 +13,16 @@ const getInputByLabel = (labelText: string) =>
 
 const digitsOf = (input: HTMLInputElement) => input.value.replace(/\s/g, '')
 
+const addRegularOverpayment = (amount: string) => {
+  fireEvent.click(screen.getByRole('button', { name: '+ Dodaj nadpłatę regularną' }))
+
+  const rows = document.querySelectorAll('.extra-payment-row.is-recurring')
+  const row = rows[rows.length - 1] as HTMLElement
+  fireEvent.change(row.querySelector('input') as HTMLInputElement, { target: { value: amount } })
+
+  return row
+}
+
 const getSummaryText = () => document.querySelector('.summary-panel')?.textContent ?? ''
 
 const calculationTypeButton = (
@@ -281,6 +291,8 @@ describe('save button behavior', () => {
     const updatedValues = tableCalls.update.mock.calls[0][0] as Record<string, unknown>
     expect(Object.keys(updatedValues)).toEqual(['payload'])
     expect((updatedValues.payload as { amount: number }).amount).toBe(400000)
+    expect(updatedValues.payload).toHaveProperty('regularOverpayments')
+    expect(updatedValues.payload).not.toHaveProperty('extraMonthlyPayment')
     expect(tableCalls.updateEq).toHaveBeenCalledWith('id', 'saved-1')
     expect(tableCalls.updateEq).toHaveBeenCalledWith('user_id', 'user-1')
 
@@ -490,6 +502,46 @@ describe('save button behavior', () => {
     expect(year.value).toBe('2026')
   })
 
+  it('turns a legacy monthly overpayment into a regular overpayment when loading', async () => {
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+
+    // The saved payload has the old single field: 500 zl monthly from 2027-10
+    const badge = screen
+      .getByText('Nadpłaty', { selector: 'summary' })
+      .querySelector('.section-badge')?.textContent
+    expect(badge).toBe('1 regularna')
+
+    const row = document.querySelector('.extra-payment-row.is-recurring') as HTMLElement
+    expect(digitsOf(row.querySelector('input') as HTMLInputElement)).toBe('500')
+    expect((row.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('converts legacy rate changes to a WIBOR using the saved margin', async () => {
+    tableCalls.listResult.mockResolvedValue({
+      data: [
+        {
+          ...savedRecord,
+          payload: {
+            ...baseSavedPayload,
+            wibor: 3,
+            margin: 2,
+            rate: 5,
+            rateChanges: [{ id: 1, date: '2028-02-01', rate: 4.5 }],
+          },
+        },
+      ],
+      error: null,
+    })
+
+    await renderLoggedIn()
+    await loadFirstSavedCalculation()
+
+    const row = document.querySelector('.row-with-note') as HTMLElement
+    expect((row.querySelector('input') as HTMLInputElement).value).toBe('2.5')
+    expect(row.textContent).toContain('4,5%')
+  })
+
   it('tells the user when a saved calculation cannot be read', async () => {
     tableCalls.listResult.mockResolvedValue({
       data: [savedRecord, { id: 'broken', name: 'Uszkodzony', payload: {}, created_at: '2026-01-15T12:00:00Z' }],
@@ -528,12 +580,12 @@ describe('form usability', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmianę' }))
     expect(getSectionBadge('Zmiany oprocentowania')).toBe('3 zmiany')
 
-    fireEvent.change(
-      screen.getByText('Regularna wpłata miesięczna').closest('label')!.querySelector('input')!,
-      { target: { value: '700' } },
-    )
+    addRegularOverpayment('700')
     fireEvent.click(screen.getByRole('button', { name: '+ Dodaj nadpłatę' }))
-    expect(getSectionBadge('Nadpłaty')).toMatch(/^700,00.zł\/mies\. \+ 1 jednorazowa$/)
+    expect(getSectionBadge('Nadpłaty')).toBe('1 regularna + 1 jednorazowa')
+
+    addRegularOverpayment('300')
+    expect(getSectionBadge('Nadpłaty')).toBe('2 regularne + 1 jednorazowa')
   })
 
   it('lets the user clear an amount field while typing and falls back to zero on blur', () => {
@@ -684,18 +736,95 @@ describe('loan form details', () => {
     expect(getRateChangeRows()).toHaveLength(0)
   })
 
-  it('describes the effect of the regular overpayment', () => {
+  it('describes the effect of a regular overpayment', () => {
     render(<App />)
 
-    expect(screen.getByText('Efekt regularnej nadp\u0142aty')).toBeTruthy()
-    expect(document.body.textContent).toContain('nadp\u0142ata skraca okres sp\u0142aty')
+    const row = addRegularOverpayment('500')
+    expect(row.textContent).toContain('nadpłata skraca okres spłaty')
 
-    const effectSelect = Array.from(document.querySelectorAll('label'))
-      .find((label) => label.textContent?.includes('Efekt regularnej nadp\u0142aty'))
-      ?.querySelector('select') as HTMLSelectElement
-    fireEvent.change(effectSelect, { target: { value: 'reduceInstallment' } })
+    fireEvent.change(row.querySelector('select') as HTMLSelectElement, {
+      target: { value: 'reduceInstallment' },
+    })
 
-    expect(document.body.textContent).toContain('Rata jest przeliczana po ka\u017cdej nadp\u0142acie')
+    expect(row.textContent).toContain('Rata jest przeliczana po każdej nadpłacie')
+  })
+
+  it('adds several regular overpayments with their own start and end', () => {
+    render(<App />)
+
+    const first = addRegularOverpayment('500')
+    const second = addRegularOverpayment('200')
+
+    expect(document.querySelectorAll('.extra-payment-row.is-recurring')).toHaveLength(2)
+    expect(first).not.toBe(second)
+
+    // Both run to the end of the loan by default
+    const endCheckbox = second.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(endCheckbox.checked).toBe(true)
+    expect(second.querySelectorAll('select')).toHaveLength(3)
+
+    fireEvent.click(endCheckbox)
+    expect(endCheckbox.checked).toBe(false)
+    // Effect select + start month/year + end month/year
+    expect(second.querySelectorAll('select')).toHaveLength(5)
+  })
+
+  it('stops a regular overpayment after its end month', () => {
+    render(<App />)
+
+    const row = addRegularOverpayment('1000')
+    fireEvent.click(row.querySelector('input[type="checkbox"]') as HTMLInputElement)
+
+    const scheduleRows = Array.from(document.querySelectorAll('.table-wrap tbody tr'))
+    const overpaidRows = scheduleRows.filter(
+      (scheduleRow) => !/^0,00/.test(scheduleRow.querySelectorAll('td')[5].textContent ?? ''),
+    )
+
+    // Default end is 24 months after the start, so 1000 zl is paid for 25 months at most
+    expect(overpaidRows.length).toBeGreaterThan(0)
+    expect(overpaidRows.length).toBeLessThanOrEqual(25)
+  })
+
+  it('warns when a regular overpayment ends before it starts', () => {
+    render(<App />)
+
+    const row = addRegularOverpayment('500')
+    fireEvent.click(row.querySelector('input[type="checkbox"]') as HTMLInputElement)
+
+    const selects = row.querySelectorAll('select')
+    // selects: effect, start month, start year, end month, end year
+    const startYear = Number((selects[2] as HTMLSelectElement).value)
+    fireEvent.change(selects[4], { target: { value: String(startYear - 1) } })
+
+    expect(row.parentElement?.textContent).toContain('Koniec jest przed początkiem')
+  })
+
+  it('removes a regular overpayment with the icon button', () => {
+    render(<App />)
+
+    addRegularOverpayment('500')
+    expect(document.querySelectorAll('.extra-payment-row.is-recurring')).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Usuń nadpłatę regularną' }))
+    expect(document.querySelectorAll('.extra-payment-row.is-recurring')).toHaveLength(0)
+  })
+
+  it('enters rate changes as a new WIBOR and shows the resulting rate', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Dodaj zmianę' }))
+    const row = getRateChangeRows()[0] as HTMLElement
+    const wiborInput = row.querySelector('input') as HTMLInputElement
+
+    // Starts from the current WIBOR (2,7%) with margin 2,5%
+    expect(wiborInput.value).toBe('2.7')
+    expect(row.textContent).toContain('5,2%')
+
+    fireEvent.change(wiborInput, { target: { value: '3.2' } })
+    expect(row.textContent).toContain('5,7%')
+
+    fireEvent.change(getInputByLabel('Marża'), { target: { value: '2' } })
+    expect(row.textContent).toContain('5,2%')
   })
 
   it('opens a field tooltip on tap and closes it when tapping elsewhere', () => {
@@ -758,7 +887,7 @@ describe('summary panel', () => {
 
     expect(document.querySelector('.savings-box')).toBeNull()
 
-    fireEvent.change(getInputByLabel('Regularna wpłata miesięczna'), { target: { value: '1000' } })
+    addRegularOverpayment('1000')
 
     const savings = document.querySelector('.savings-box')
     expect(savings?.textContent).toContain('Mniej odsetek')
@@ -785,7 +914,7 @@ describe('summary panel', () => {
   it('counts additional costs only while the loan runs, matching the schedule rows', () => {
     render(<App />)
 
-    fireEvent.change(getInputByLabel('Regularna wpłata miesięczna'), { target: { value: '3000' } })
+    addRegularOverpayment('3000')
 
     const rows = Array.from(document.querySelectorAll('.table-wrap tbody tr'))
     expect(rows.length).toBeLessThan(360)

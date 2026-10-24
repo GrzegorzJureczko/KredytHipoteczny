@@ -1724,6 +1724,60 @@ input[type='number']::-webkit-outer-spin-button {
   line-height: 1;
 }
 
+.extra-payment-header {
+  flex-wrap: wrap;
+}
+
+.row-tag {
+  grid-column: 1 / -1;
+  color: #4a4a4a;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.extra-payment-row.is-recurring {
+  grid-template-columns: 1fr 1fr auto;
+}
+
+.extra-payment-row.is-recurring > .icon-button {
+  grid-column: 3;
+  grid-row: 2;
+  align-self: end;
+}
+
+.checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 0;
+  color: #101010;
+  font-size: 0.85rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  accent-color: #101010;
+}
+
+@media (max-width: 900px) {
+  .extra-payment-row.is-recurring {
+    grid-template-columns: 1fr;
+  }
+
+  .extra-payment-row.is-recurring > .icon-button {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: end;
+  }
+}
+
 .input-unit input[readonly] {
   padding-left: 0;
   border-color: transparent;

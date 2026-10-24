@@ -325,4 +325,147 @@ describe('calculateLoanSummary', () => {
       result.schedule.slice(0, firstExtraPaymentMonth).every((row) => row.extraPayment === 0),
     ).toBe(true)
   })
+
+  describe('recurring extra payments with a start and an end', () => {
+    const base = {
+      loanAmount: 120000,
+      annualRate: 6,
+      termMonths: 60,
+      repaymentType: 'annuity' as const,
+      loanStartDate: '2026-01-01',
+    }
+
+    it('pays only within the selected months, end month included', () => {
+      const result = calculateLoanSummary({
+        ...base,
+        recurringExtraPayments: [{ amount: 500, startDate: '2026-07-01', endDate: '2026-12-01' }],
+      })
+
+      result.schedule.forEach((row, index) => {
+        // index 6 = July 2026 ... index 11 = December 2026
+        expect(row.extraPayment).toBe(index >= 6 && index <= 11 ? 500 : 0)
+      })
+    })
+
+    it('runs until the end of the loan when no end date is given', () => {
+      const result = calculateLoanSummary({
+        ...base,
+        recurringExtraPayments: [{ amount: 500, startDate: '2026-07-01' }],
+      })
+
+      expect(result.schedule[6].extraPayment).toBe(500)
+      expect(result.schedule[result.schedule.length - 2].extraPayment).toBe(500)
+    })
+
+    it('adds several recurring payments that overlap in the same month', () => {
+      const result = calculateLoanSummary({
+        ...base,
+        recurringExtraPayments: [
+          { amount: 300, startDate: '2026-03-01', endDate: '2026-08-01' },
+          { amount: 200, startDate: '2026-06-01' },
+        ],
+      })
+
+      expect(result.schedule[3].extraPayment).toBe(300)
+      expect(result.schedule[6].extraPayment).toBe(500)
+      expect(result.schedule[9].extraPayment).toBe(200)
+    })
+
+    it('ignores a payment whose end is before its start', () => {
+      const baseline = calculateLoanSummary(base)
+      const result = calculateLoanSummary({
+        ...base,
+        recurringExtraPayments: [{ amount: 500, startDate: '2026-09-01', endDate: '2026-03-01' }],
+      })
+
+      expect(result.totalInterest).toBeCloseTo(baseline.totalInterest, 2)
+      expect(result.loanTermMonths).toBe(baseline.loanTermMonths)
+    })
+
+    it('uses the effect of each payment separately', () => {
+      const reduceTerm = calculateLoanSummary({
+        ...base,
+        recurringExtraPayments: [
+          { amount: 500, startDate: '2026-07-01', effect: 'reduceTerm' },
+        ],
+      })
+      const reduceInstallment = calculateLoanSummary({
+        ...base,
+        recurringExtraPayments: [
+          { amount: 500, startDate: '2026-07-01', effect: 'reduceInstallment' },
+        ],
+      })
+
+      expect(reduceTerm.schedule[8].payment).toBeCloseTo(reduceTerm.schedule[7].payment, 2)
+      expect(reduceInstallment.schedule[8].payment).toBeLessThan(
+        reduceInstallment.schedule[7].payment,
+      )
+    })
+
+    it('combines the legacy monthly extra payment with new recurring payments', () => {
+      const result = calculateLoanSummary({
+        ...base,
+        extraMonthlyPayment: 500,
+        extraMonthlyPaymentStartDate: '2026-07-01',
+        recurringExtraPayments: [{ amount: 200, startDate: '2026-07-01' }],
+      })
+
+      expect(result.schedule[6].extraPayment).toBe(700)
+    })
+  })
+
+  describe('rate changes to zero', () => {
+    it('applies a 0% rate change as 0% instead of falling back to the base rate', () => {
+      const result = calculateLoanSummary({
+        loanAmount: 120000,
+        annualRate: 5,
+        termMonths: 60,
+        repaymentType: 'annuity',
+        loanStartDate: '2026-01-01',
+        rateChanges: [{ date: '2027-01-01', rate: 0 }],
+      })
+
+      const balanceBeforeChange = result.schedule[11].remainingBalance
+      const changeMonth = result.schedule[12]
+
+      expect(changeMonth.annualRate).toBe(0)
+      expect(changeMonth.interest).toBe(0)
+      expect(changeMonth.payment).toBeCloseTo(balanceBeforeChange / 48, 1)
+      result.schedule.forEach((row) => {
+        expect(Number.isFinite(row.payment)).toBe(true)
+        expect(Number.isFinite(row.remainingBalance)).toBe(true)
+      })
+      expect(result.schedule[result.schedule.length - 1].remainingBalance).toBe(0)
+    })
+
+    it('keeps decreasing installments finite when the rate drops to zero', () => {
+      const result = calculateLoanSummary({
+        loanAmount: 120000,
+        annualRate: 5,
+        termMonths: 60,
+        repaymentType: 'decreasing',
+        loanStartDate: '2026-01-01',
+        rateChanges: [{ date: '2027-01-01', rate: 0 }],
+      })
+
+      expect(result.schedule[12].interest).toBe(0)
+      expect(result.schedule[12].payment).toBeCloseTo(result.schedule[12].principal, 2)
+      expect(result.schedule[result.schedule.length - 1].remainingBalance).toBe(0)
+    })
+
+    it('still supports a loan that starts at 0% with a later increase', () => {
+      const result = calculateLoanSummary({
+        loanAmount: 60000,
+        annualRate: 0,
+        termMonths: 60,
+        repaymentType: 'annuity',
+        loanStartDate: '2026-01-01',
+        rateChanges: [{ date: '2027-01-01', rate: 6 }],
+      })
+
+      expect(result.schedule[0].payment).toBeCloseTo(1000, 2)
+      expect(result.schedule[12].interest).toBeGreaterThan(0)
+      expect(Number.isFinite(result.totalPaid)).toBe(true)
+    })
+  })
 })

@@ -31,7 +31,15 @@ type ExtraPaymentEntry = {
 type RateChangeEntry = {
   id: number
   date: string
-  rate: number
+  wibor: number
+}
+
+type RegularOverpaymentEntry = {
+  id: number
+  amount: number
+  startDate: string
+  endDate: string
+  effect: ExtraPaymentMode
 }
 
 type FormState = {
@@ -43,9 +51,7 @@ type FormState = {
   years: number
   repaymentType: RepaymentType
   rateChanges: RateChangeEntry[]
-  extraMonthlyPayment: number
-  extraMonthlyPaymentStartDate: string
-  extraPaymentMode: ExtraPaymentMode
+  regularOverpayments: RegularOverpaymentEntry[]
   extraPayments: ExtraPaymentEntry[]
   applicationFee: number
   applicationFeeCalculationType: 'percentage' | 'amount'
@@ -96,6 +102,11 @@ const getDateOffsetMonths = (offsetMonths: number) => {
   return toLocalDateString(date)
 }
 
+const addMonthsToDate = (value: string, months: number) => {
+  const { year, month } = getMonthYearParts(value)
+  return toLocalDateString(new Date(year, month - 1 + months, 1))
+}
+
 const getAnnualRateFromSplit = (wibor: number, margin: number) =>
   Number((Number(wibor || 0) + Number(margin || 0)).toFixed(4))
 
@@ -108,9 +119,7 @@ const initialForm: FormState = {
   years: 30,
   repaymentType: 'annuity',
   rateChanges: [],
-  extraMonthlyPayment: 0,
-  extraMonthlyPaymentStartDate: getNextMonthDate(),
-  extraPaymentMode: 'reduceTerm',
+  regularOverpayments: [],
   extraPayments: [],
   applicationFee: 1500,
   applicationFeeCalculationType: 'amount',
@@ -428,30 +437,66 @@ const buildLoanInput = (source: FormState): LoanInput => ({
   termMonths: source.years * 12,
   repaymentType: source.repaymentType,
   loanStartDate: source.loanStartDate,
-  rateChanges: source.rateChanges.map(({ date, rate }) => ({ date, rate })),
-  extraMonthlyPayment: source.extraMonthlyPayment,
-  extraMonthlyPaymentStartDate: source.extraMonthlyPaymentStartDate,
+  rateChanges: source.rateChanges.map(({ date, wibor }) => ({
+    date,
+    rate: getAnnualRateFromSplit(wibor, source.margin),
+  })),
+  recurringExtraPayments: source.regularOverpayments.map(
+    ({ amount, startDate, endDate, effect }) => ({
+      amount,
+      startDate,
+      endDate: endDate || undefined,
+      effect,
+    }),
+  ),
   extraPayments: source.extraPayments.map(({ amount, date, effect }) => ({
     amount,
     date,
     effect,
   })),
-  extraPaymentMode: source.extraPaymentMode,
 })
 
 const payloadToFormState = (payload: SavedCalculationPayload): FormState => {
-  const snapshot = JSON.parse(JSON.stringify(payload)) as Partial<FormState>
-  const wibor = Number(snapshot.wibor ?? snapshot.rate ?? 0)
-  const margin = Number(snapshot.margin ?? 0)
+  const {
+    extraMonthlyPayment,
+    extraMonthlyPaymentStartDate,
+    extraPaymentMode,
+    regularOverpayments: savedRegularOverpayments,
+    rateChanges: savedRateChanges,
+    ...rest
+  } = JSON.parse(JSON.stringify(payload)) as SavedCalculationPayload
+  const wibor = Number(rest.wibor ?? rest.rate ?? 0)
+  const margin = Number(rest.margin ?? 0)
+  const totalRate = getAnnualRateFromSplit(wibor, margin)
+  const startDate = rest.loanStartDate || initialForm.loanStartDate
+
+  const regularOverpayments: RegularOverpaymentEntry[] =
+    savedRegularOverpayments ??
+    ((extraMonthlyPayment ?? 0) > 0
+      ? [
+          {
+            id: 1,
+            amount: extraMonthlyPayment ?? 0,
+            startDate: extraMonthlyPaymentStartDate || startDate,
+            endDate: '',
+            effect: extraPaymentMode ?? 'reduceTerm',
+          },
+        ]
+      : [])
 
   return {
     ...initialForm,
-    ...snapshot,
-    rate: getAnnualRateFromSplit(wibor, margin),
+    ...(rest as Partial<FormState>),
+    rate: totalRate,
     wibor,
     margin,
-    rateChanges: snapshot.rateChanges ?? [],
-    extraPayments: snapshot.extraPayments ?? [],
+    rateChanges: (savedRateChanges ?? []).map((entry) => ({
+      id: entry.id,
+      date: entry.date,
+      wibor: entry.wibor ?? Number(((entry.rate ?? totalRate) - margin).toFixed(4)),
+    })),
+    regularOverpayments,
+    extraPayments: rest.extraPayments ?? [],
   }
 }
 
@@ -1109,13 +1154,14 @@ function App() {
   const summary = useMemo(() => calculateLoanSummary(buildLoanInput(form)), [form])
 
   const hasOverpayments =
-    form.extraMonthlyPayment > 0 || form.extraPayments.some((payment) => payment.amount > 0)
+    form.regularOverpayments.some((entry) => entry.amount > 0) ||
+    form.extraPayments.some((payment) => payment.amount > 0)
 
   const baselineSummary = useMemo(
     () =>
       hasOverpayments
         ? calculateLoanSummary(
-            buildLoanInput({ ...form, extraMonthlyPayment: 0, extraPayments: [] }),
+            buildLoanInput({ ...form, regularOverpayments: [], extraPayments: [] }),
           )
         : null,
     [form, hasOverpayments],
@@ -1177,9 +1223,26 @@ function App() {
     return null
   }
 
+  const getRegularOverpaymentWarning = (entry: RegularOverpaymentEntry) => {
+    const startIndex = toMonthIndex(entry.startDate)
+
+    if (entry.endDate !== '' && toMonthIndex(entry.endDate) < startIndex) {
+      return 'Koniec jest przed początkiem – ta nadpłata nie będzie naliczana.'
+    }
+
+    if (startIndex > loanEndIndex) {
+      return 'Start po zakończeniu spłaty – nadpłata nie wpływa na harmonogram.'
+    }
+
+    return null
+  }
+
   const oneTimeOverpaymentCount = form.extraPayments.length
+  const regularOverpaymentCount = form.regularOverpayments.length
   const overpaymentBadgeParts = [
-    form.extraMonthlyPayment > 0 ? `${formatCurrency(form.extraMonthlyPayment)}/mies.` : null,
+    regularOverpaymentCount > 0
+      ? `${regularOverpaymentCount} ${pluralize(regularOverpaymentCount, 'regularna', 'regularne', 'regularnych')}`
+      : null,
     oneTimeOverpaymentCount > 0
       ? `${oneTimeOverpaymentCount} ${pluralize(oneTimeOverpaymentCount, 'jednorazowa', 'jednorazowe', 'jednorazowych')}`
       : null,
@@ -1200,13 +1263,13 @@ function App() {
         {
           id: Date.now() + Math.random(),
           date: getDateOffsetMonths(12),
-          rate: current.rate,
+          wibor: current.wibor,
         },
       ],
     }))
   }
 
-  const updateRateChange = (id: number, field: 'date' | 'rate', value: string | number) => {
+  const updateRateChange = (id: number, field: 'date' | 'wibor', value: string | number) => {
     setForm((current) => ({
       ...current,
       rateChanges: current.rateChanges.map((entry) =>
@@ -1219,6 +1282,41 @@ function App() {
     setForm((current) => ({
       ...current,
       rateChanges: current.rateChanges.filter((entry) => entry.id !== id),
+    }))
+  }
+
+  const addRegularOverpayment = () => {
+    setForm((current) => ({
+      ...current,
+      regularOverpayments: [
+        ...current.regularOverpayments,
+        {
+          id: Date.now() + Math.random(),
+          amount: 500,
+          startDate: current.loanStartDate,
+          endDate: '',
+          effect: 'reduceTerm',
+        },
+      ],
+    }))
+  }
+
+  const updateRegularOverpayment = (
+    id: number,
+    changes: Partial<Omit<RegularOverpaymentEntry, 'id'>>,
+  ) => {
+    setForm((current) => ({
+      ...current,
+      regularOverpayments: current.regularOverpayments.map((entry) =>
+        entry.id === id ? { ...entry, ...changes } : entry,
+      ),
+    }))
+  }
+
+  const removeRegularOverpayment = (id: number) => {
+    setForm((current) => ({
+      ...current,
+      regularOverpayments: current.regularOverpayments.filter((entry) => entry.id !== id),
     }))
   }
 
@@ -2157,7 +2255,7 @@ function App() {
               </div>
 
               {form.rateChanges.length === 0 ? (
-                <p className="empty-state">Brak zmian oprocentowania. Dodaj datę i nową stopę, aby zmienić odsetki od wybranego momentu.</p>
+                <p className="empty-state">Brak zmian oprocentowania. Dodaj datę i nowy WIBOR, aby zmienić odsetki od wybranego momentu. Marża zostaje bez zmian.</p>
               ) : (
                 sortedRateChanges.map((entry) => {
                   const warning = getRateChangeWarning(entry)
@@ -2166,13 +2264,13 @@ function App() {
                     <div key={entry.id} className="row-with-note">
                       <div className="extra-payment-row">
                         <label>
-                          <span>Nowe oprocentowanie</span>
+                          <span>Nowy WIBOR</span>
                           <UnitInput
                             unit="%"
                             min="0"
                             step="0.1"
-                            value={entry.rate}
-                            onValueChange={(value) => updateRateChange(entry.id, 'rate', value)}
+                            value={entry.wibor}
+                            onValueChange={(value) => updateRateChange(entry.id, 'wibor', value)}
                           />
                         </label>
                         <label>
@@ -2191,6 +2289,11 @@ function App() {
                           ×
                         </button>
                       </div>
+                      <p className="field-note">
+                        Oprocentowanie po zmianie:{' '}
+                        <strong>{formatPercent(getAnnualRateFromSplit(entry.wibor, form.margin))}</strong>{' '}
+                        (WIBOR + marża {formatPercent(form.margin)})
+                      </p>
                       {warning ? <p className="row-note">{warning}</p> : null}
                     </div>
                   )
@@ -2204,111 +2307,152 @@ function App() {
               Nadpłaty
               <span className="section-badge">{overpaymentBadge}</span>
             </summary>
-            <div className="field-grid compact overpayment-settings">
-              <label>
-                <span className="field-title">
-                  Regularna wpłata miesięczna
-                  <FieldTooltip id="recurring-overpayment-help" text="Stała nadpłata powtarzana co miesiąc" />
-                </span>
-                <UnitInput
-                  unit="zł"
-                  min="0"
-                  step="100"
-                  value={form.extraMonthlyPayment}
-                  onValueChange={(value) => updateField('extraMonthlyPayment', value)}
-                />
-              </label>
-
-              <label>
-                <span className="field-title">
-                  Data rozpoczęcia nadpłaty
-                  <FieldTooltip id="overpayment-start-help" text="Od kiedy ma zaczynać działać stała nadpłata" />
-                </span>
-                <MonthYearInput
-                  value={form.extraMonthlyPaymentStartDate}
-                  onChange={(value) => updateField('extraMonthlyPaymentStartDate', value)}
-                />
-              </label>
-
-              <label>
-                <span className="field-title">
-                  Efekt regularnej nadpłaty
-                  <FieldTooltip id="overpayment-effect-help" text="Co ma się zmienić po dodatkowej wpłacie" />
-                </span>
-                <select
-                  value={form.extraPaymentMode}
-                  onChange={(event) =>
-                    updateField('extraPaymentMode', event.target.value as ExtraPaymentMode)
-                  }
-                >
-                  <option value="reduceTerm">Skrócenie okresu</option>
-                  <option value="reduceInstallment">Obniżenie raty</option>
-                </select>
-                <small className="field-note">
-                  {form.extraPaymentMode === 'reduceTerm'
-                    ? 'Rata zostaje bez zmian, a nadpłata skraca okres spłaty.'
-                    : 'Rata jest przeliczana po każdej nadpłacie dla pozostałego okresu.'}
-                </small>
-              </label>
-            </div>
-
             <div className="extra-payment-list">
-              <div className="extra-payment-header">
-                <h4>Dodatkowe nadpłaty jednorazowe</h4>
+              <div className="extra-payment-header is-end">
+                <button type="button" className="secondary-button" onClick={addRegularOverpayment}>
+                  + Dodaj nadpłatę regularną
+                </button>
                 <button type="button" className="secondary-button" onClick={addExtraPayment}>
                   + Dodaj nadpłatę
                 </button>
               </div>
 
-              {form.extraPayments.length === 0 ? (
-                <p className="empty-state">Brak dodatkowych nadpłat. Dodaj datę i kwotę, aby uwzględnić ją w harmonogramie.</p>
-              ) : (
-                form.extraPayments.map((payment) => (
-                  <div key={payment.id} className="extra-payment-row">
-                    <label>
-                      <span>Kwota</span>
-                      <UnitInput
-                        unit="zł"
-                        min="0"
-                        step="100"
-                        value={payment.amount}
-                        onValueChange={(value) => updateExtraPayment(payment.id, 'amount', value)}
-                      />
-                    </label>
-                    <label>
-                      <span>Data</span>
-                      <MonthYearInput
-                        value={payment.date}
-                        onChange={(value) => updateExtraPayment(payment.id, 'date', value)}
-                      />
-                    </label>
-                    <label>
-                      <span>Efekt</span>
-                      <select
-                        value={payment.effect}
-                        onChange={(event) =>
-                          updateExtraPayment(
-                            payment.id,
-                            'effect',
-                            event.target.value as ExtraPaymentMode,
-                          )
-                        }
+              {form.regularOverpayments.length === 0 && form.extraPayments.length === 0 ? (
+                <p className="empty-state">Brak nadpłat. Dodaj nadpłatę regularną (co miesiąc, z datą startu i końca) albo jednorazową.</p>
+              ) : null}
+
+              {form.regularOverpayments.map((entry) => {
+                const warning = getRegularOverpaymentWarning(entry)
+
+                return (
+                  <div key={entry.id} className="row-with-note">
+                    <div className="extra-payment-row is-recurring">
+                      <span className="row-tag">Regularna</span>
+                      <label>
+                        <span>Kwota miesięczna</span>
+                        <UnitInput
+                          unit="zł"
+                          min="0"
+                          step="100"
+                          value={entry.amount}
+                          onValueChange={(value) =>
+                            updateRegularOverpayment(entry.id, { amount: value })
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>Efekt</span>
+                        <select
+                          value={entry.effect}
+                          onChange={(event) =>
+                            updateRegularOverpayment(entry.id, {
+                              effect: event.target.value as ExtraPaymentMode,
+                            })
+                          }
+                        >
+                          <option value="reduceTerm">Skrócenie okresu</option>
+                          <option value="reduceInstallment">Obniżenie raty</option>
+                        </select>
+                        <small className="field-note">
+                          {entry.effect === 'reduceTerm'
+                            ? 'Rata zostaje bez zmian, a nadpłata skraca okres spłaty.'
+                            : 'Rata jest przeliczana po każdej nadpłacie dla pozostałego okresu.'}
+                        </small>
+                      </label>
+                      <label>
+                        <span>Od</span>
+                        <MonthYearInput
+                          value={entry.startDate}
+                          onChange={(value) =>
+                            updateRegularOverpayment(entry.id, { startDate: value })
+                          }
+                        />
+                      </label>
+                      <div className="field-group">
+                        <span>Do</span>
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={entry.endDate === ''}
+                            onChange={(event) =>
+                              updateRegularOverpayment(entry.id, {
+                                endDate: event.target.checked
+                                  ? ''
+                                  : addMonthsToDate(entry.startDate, 24),
+                              })
+                            }
+                          />
+                          Do końca kredytu
+                        </label>
+                        {entry.endDate !== '' ? (
+                          <MonthYearInput
+                            value={entry.endDate}
+                            onChange={(value) =>
+                              updateRegularOverpayment(entry.id, { endDate: value })
+                            }
+                          />
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="remove-button icon-button"
+                        aria-label="Usuń nadpłatę regularną"
+                        onClick={() => removeRegularOverpayment(entry.id)}
                       >
-                        <option value="reduceTerm">Skrócenie okresu</option>
-                        <option value="reduceInstallment">Obniżenie raty</option>
-                      </select>
-                    </label>
-                    <button
-                      type="button"
-                      className="remove-button icon-button"
-                      aria-label="Usuń nadpłatę"
-                      onClick={() => removeExtraPayment(payment.id)}
-                    >
-                      ×
-                    </button>
+                        ×
+                      </button>
+                    </div>
+                    {warning ? <p className="row-note">{warning}</p> : null}
                   </div>
-                ))
-              )}
+                )
+              })}
+
+              {form.extraPayments.map((payment) => (
+                <div key={payment.id} className="extra-payment-row">
+                  <span className="row-tag">Jednorazowa</span>
+                  <label>
+                    <span>Kwota</span>
+                    <UnitInput
+                      unit="zł"
+                      min="0"
+                      step="100"
+                      value={payment.amount}
+                      onValueChange={(value) => updateExtraPayment(payment.id, 'amount', value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Data</span>
+                    <MonthYearInput
+                      value={payment.date}
+                      onChange={(value) => updateExtraPayment(payment.id, 'date', value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Efekt</span>
+                    <select
+                      value={payment.effect}
+                      onChange={(event) =>
+                        updateExtraPayment(
+                          payment.id,
+                          'effect',
+                          event.target.value as ExtraPaymentMode,
+                        )
+                      }
+                    >
+                      <option value="reduceTerm">Skrócenie okresu</option>
+                      <option value="reduceInstallment">Obniżenie raty</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="remove-button icon-button"
+                    aria-label="Usuń nadpłatę"
+                    onClick={() => removeExtraPayment(payment.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
           </details>
 
