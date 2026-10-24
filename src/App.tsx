@@ -146,6 +146,10 @@ const formatCurrency = (value: number) =>
 const formatPercent = (value: number) =>
   `${new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 2 }).format(value)}%`
 
+const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
+
+const formatMoneyOrDash = (value: number) => (value === 0 ? '\u2013' : formatCurrency(value))
+
 const monthNames = [
   'styczeń',
   'luty',
@@ -585,6 +589,7 @@ function App() {
   const [renameValue, setRenameValue] = useState('')
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const [openYears, setOpenYears] = useState<number[] | null>(null)
   const [savedCalculationsExpanded, setSavedCalculationsExpanded] = useState(false)
   const [lastSavedForm, setLastSavedForm] = useState<FormState>(initialForm)
   const [authMessage, setAuthMessage] = useState<{ type: 'success' | 'error'; text: string }>({
@@ -1373,6 +1378,7 @@ function App() {
       paymentDate,
       monthLabel: `${monthNames[paymentDate.getMonth()]} ${paymentDate.getFullYear()}`,
       year: paymentDate.getFullYear(),
+      rateChanged: index === 0 || row.annualRate !== summary.schedule[index - 1].annualRate,
       additionalCosts: getMonthlyAdditionalCost(index + 1, form, startBalance),
     }
   })
@@ -1410,6 +1416,36 @@ function App() {
   const monthsSaved = baselineSummary
     ? Math.max(0, baselineSummary.loanTermMonths - summary.loanTermMonths)
     : 0
+
+  const sumRows = (rows: typeof scheduleWithDates) =>
+    rows.reduce(
+      (totals, row) => ({
+        payment: totals.payment + row.payment,
+        principal: totals.principal + row.principal,
+        interest: totals.interest + row.interest,
+        extraPayment: totals.extraPayment + row.extraPayment,
+        additionalCosts: totals.additionalCosts + row.additionalCosts,
+      }),
+      { payment: 0, principal: 0, interest: 0, extraPayment: 0, additionalCosts: 0 },
+    )
+
+  const yearSections = groupedByYear.map((rows) => ({
+    year: rows[0].year,
+    rows,
+    totals: sumRows(rows),
+    endBalance: rows[rows.length - 1].remainingBalance,
+  }))
+  const scheduleTotals = sumRows(scheduleWithDates)
+  const defaultOpenYears = yearSections.length > 0 ? [yearSections[0].year] : []
+  const isYearOpen = (year: number) => (openYears ?? defaultOpenYears).includes(year)
+
+  const toggleYear = (year: number) =>
+    setOpenYears((current) => {
+      const base = current ?? defaultOpenYears
+      return base.includes(year) ? base.filter((openYear) => openYear !== year) : [...base, year]
+    })
+  const expandAllYears = () => setOpenYears(yearSections.map((section) => section.year))
+  const collapseAllYears = () => setOpenYears([])
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => {
@@ -2313,7 +2349,7 @@ function App() {
                   + Dodaj nadpłatę regularną
                 </button>
                 <button type="button" className="secondary-button" onClick={addExtraPayment}>
-                  + Dodaj nadpłatę
+                  + Dodaj nadpłatę jednorazową
                 </button>
               </div>
 
@@ -2534,70 +2570,98 @@ function App() {
       <section className="panel schedule-panel" id="harmonogram">
         <div className="section-header">
           <h2>Harmonogram spłat</h2>
-          <span>po latach</span>
+          <div className="schedule-actions">
+            <button type="button" className="secondary-button" onClick={expandAllYears}>
+              Rozwiń wszystko
+            </button>
+            <button type="button" className="secondary-button" onClick={collapseAllYears}>
+              Zwiń wszystko
+            </button>
+          </div>
         </div>
 
-        <div className="schedule-table-header">
+        <div className="schedule-table">
           <table>
+            <caption className="visually-hidden">Harmonogram spłat</caption>
             <colgroup>
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '16%' }} />
-              <col style={{ width: '13%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '9%' }} />
               <col style={{ width: '13%' }} />
               <col style={{ width: '12%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '8%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '16%' }} />
             </colgroup>
             <thead>
               <tr>
-                <th>Miesiąc</th>
-                <th>Oprocentowanie</th>
-                <th>Rata</th>
-                <th>Kapitał</th>
-                <th>Odsetki</th>
-                <th>Nadpłata</th>
-                <th>Koszty dodatkowe</th>
-                <th>Saldo</th>
+                <th scope="col">Miesiąc</th>
+                <th scope="col" className="num">Oprocentowanie</th>
+                <th scope="col" className="num">Rata</th>
+                <th scope="col" className="num">Kapitał</th>
+                <th scope="col" className="num">Odsetki</th>
+                <th scope="col" className="num">Nadpłata</th>
+                <th scope="col" className="num">Koszty dodatkowe</th>
+                <th scope="col" className="num">Saldo</th>
               </tr>
             </thead>
-          </table>
-        </div>
+            {yearSections.map((section) => {
+              const isOpen = isYearOpen(section.year)
 
-        <div className="year-groups">
-          {groupedByYear.map((rows, index) => (
-            <details key={rows[0]?.year ?? index} open={index === 0} className="year-group">
-              <summary>{rows[0]?.year}</summary>
-              <div className="table-wrap">
-                <table>
-                  <colgroup>
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '10%' }} />
-                    <col style={{ width: '16%' }} />
-                    <col style={{ width: '13%' }} />
-                    <col style={{ width: '13%' }} />
-                    <col style={{ width: '12%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '8%' }} />
-                  </colgroup>
-                  <tbody>
-                    {rows.map((row) => (
-                      <tr key={`${row.year}-${row.month}`}>
-                        <td>{row.monthLabel}</td>
-                        <td>{formatPercent(row.annualRate)}</td>
-                        <td>{formatCurrency(row.payment)}</td>
-                        <td>{formatCurrency(row.principal)}</td>
-                        <td>{formatCurrency(row.interest)}</td>
-                        <td>{formatCurrency(row.extraPayment)}</td>
-                        <td>{formatCurrency(row.additionalCosts)}</td>
-                        <td>{formatCurrency(row.remainingBalance)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          ))}
+              return (
+                <tbody key={section.year} className={isOpen ? 'year-section is-open' : 'year-section'}>
+                  <tr className="year-row">
+                    <th scope="rowgroup" className="year-cell">
+                      <button
+                        type="button"
+                        className="year-toggle"
+                        aria-expanded={isOpen}
+                        onClick={() => toggleYear(section.year)}
+                      >
+                        <span aria-hidden="true">{isOpen ? '−' : '+'}</span> {section.year}
+                      </button>
+                    </th>
+                    <td className="num year-blank" aria-hidden="true" />
+                    <td className="num" data-label="Rata">{formatCurrency(section.totals.payment)}</td>
+                    <td className="num" data-label="Kapitał">{formatCurrency(section.totals.principal)}</td>
+                    <td className="num" data-label="Odsetki">{formatCurrency(section.totals.interest)}</td>
+                    <td className="num" data-label="Nadpłata">{formatMoneyOrDash(section.totals.extraPayment)}</td>
+                    <td className="num" data-label="Koszty dodatkowe">{formatMoneyOrDash(section.totals.additionalCosts)}</td>
+                    <td className="num" data-label="Saldo na koniec roku">{formatCurrency(section.endBalance)}</td>
+                  </tr>
+                  {section.rows.map((row) => (
+                    <tr key={`${row.year}-${row.month}`} className="schedule-row" hidden={!isOpen}>
+                      <td data-label="Miesiąc">{capitalize(row.monthLabel)}</td>
+                      <td
+                        className={row.rateChanged ? 'num' : 'num is-unchanged'}
+                        data-label="Oprocentowanie"
+                      >
+                        {formatPercent(row.annualRate)}
+                      </td>
+                      <td className="num" data-label="Rata">{formatCurrency(row.payment)}</td>
+                      <td className="num" data-label="Kapitał">{formatCurrency(row.principal)}</td>
+                      <td className="num" data-label="Odsetki">{formatCurrency(row.interest)}</td>
+                      <td className="num" data-label="Nadpłata">{formatMoneyOrDash(row.extraPayment)}</td>
+                      <td className="num" data-label="Koszty dodatkowe">{formatMoneyOrDash(row.additionalCosts)}</td>
+                      <td className="num" data-label="Saldo">{formatCurrency(row.remainingBalance)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              )
+            })}
+            <tfoot>
+              <tr className="schedule-total-row">
+                <th scope="row">Razem</th>
+                <td className="num year-blank" aria-hidden="true" />
+                <td className="num" data-label="Rata">{formatCurrency(scheduleTotals.payment)}</td>
+                <td className="num" data-label="Kapitał">{formatCurrency(scheduleTotals.principal)}</td>
+                <td className="num" data-label="Odsetki">{formatCurrency(scheduleTotals.interest)}</td>
+                <td className="num" data-label="Nadpłata">{formatMoneyOrDash(scheduleTotals.extraPayment)}</td>
+                <td className="num" data-label="Koszty dodatkowe">{formatMoneyOrDash(scheduleTotals.additionalCosts)}</td>
+                <td className="num" data-label="Saldo" aria-hidden="true" />
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </section>
     </div>
