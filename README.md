@@ -28,6 +28,9 @@ Interfejs aplikacji jest w języku polskim.*
   principal, interest and additional costs, and the interest and time saved by overpayments.
 - **Schedule:** one sticky-header table grouped by year with yearly subtotals, a totals row, markers
   for overpayment events and the last installment, and a card layout on phones.
+- **Export and print:** download the full schedule as a CSV file that opens correctly in Excel (UTF-8,
+  semicolon-separated, decimal commas) or print a compact version with the loan parameters, the summary
+  and every year expanded.
 - **Accounts (Supabase):** sign up, sign in, password reset; save, load, rename, copy and delete
   calculations; warnings about unsaved changes.
 - **Quality of life:** thousands separators while typing, inline validation, tap-friendly tooltips,
@@ -131,7 +134,7 @@ The app is a static Vite build deployed on Vercel. Set `VITE_SUPABASE_URL` and
 
 ## Roadmap
 
-CSV export and print view, a balance chart, side-by-side comparison of two scenarios, installment
+A balance chart, side-by-side comparison of two scenarios, installment
 number in the schedule, English translation.
 
 ## Disclaimer

@@ -19,7 +19,7 @@ import {
   initialForm,
 } from './loanForm'
 import { buildScheduleRows, groupScheduleByYear, sumScheduleRows } from './scheduleView'
-import { buildSummaryView, hasAnyOverpayment } from './summaryView'
+import { buildSummaryView, buildPrintDetails, hasAnyOverpayment } from './summaryView'
 
 function App() {
   const loan = useLoanForm()
@@ -90,6 +90,8 @@ function App() {
       </header>
 
       <main className="page-shell">
+        <div className="print-summary" aria-hidden="true" data-details={buildPrintDetails(form)} />
+
         <AccountPanel account={account} />
 
         <div className="app-grid">

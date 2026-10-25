@@ -1,5 +1,6 @@
 import type { LoanSummary } from './calculator'
-import type { FormState } from './loanForm'
+import { capitalize, formatCurrency, formatPercent, monthNames, pluralize } from './format'
+import { getMonthYearParts, type FormState } from './loanForm'
 
 export type CostPart = { key: 'principal' | 'interest' | 'additional'; label: string; value: number }
 
@@ -73,4 +74,21 @@ export const buildSummaryView = ({
       ? Math.max(0, baselineSummary.loanTermMonths - summary.loanTermMonths)
       : 0,
   }
+}
+
+export const buildPrintDetails = (form: FormState) => {
+  const { year, month } = getMonthYearParts(form.loanStartDate)
+  const parts = [
+    formatCurrency(form.amount),
+    `${form.years} ${pluralize(form.years, 'rok', 'lata', 'lat')}`,
+    `oprocentowanie ${formatPercent(form.rate)}`,
+    form.repaymentType === 'annuity' ? 'raty równe' : 'raty malejące',
+    `start: ${capitalize(monthNames[month - 1])} ${year}`,
+  ]
+
+  if (form.rateChanges.length > 0) {
+    parts.push(`zmiany oprocentowania: ${form.rateChanges.length}`)
+  }
+
+  return parts.join(' · ')
 }

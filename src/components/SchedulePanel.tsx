@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { buildScheduleCsv, downloadCsv } from '../csvExport'
 import { capitalize, formatCurrency, formatMoneyOrDash, formatPercent } from '../format'
 import type { ScheduleTotals, ScheduleYearSection } from '../scheduleView'
 
@@ -21,6 +22,8 @@ export const SchedulePanel = ({
     })
   const expandAllYears = () => setOpenYears(yearSections.map((section) => section.year))
   const collapseAllYears = () => setOpenYears([])
+  const exportCsv = () =>
+    downloadCsv('harmonogram-splat.csv', buildScheduleCsv(yearSections, totals))
 
   return (
     <section className="panel schedule-panel" id="harmonogram">
@@ -32,6 +35,12 @@ export const SchedulePanel = ({
           </button>
           <button type="button" className="secondary-button" onClick={collapseAllYears}>
             Zwiń wszystko
+          </button>
+          <button type="button" className="secondary-button" onClick={exportCsv}>
+            Pobierz CSV
+          </button>
+          <button type="button" className="secondary-button" onClick={() => window.print()}>
+            Drukuj
           </button>
         </div>
       </div>
