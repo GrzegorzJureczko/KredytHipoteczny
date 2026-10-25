@@ -257,6 +257,35 @@ describe('calculateLoanSummary', () => {
     expect(result.schedule[25].payment).toBeGreaterThan(result.schedule[0].payment)
   })
 
+  it.each(['annuity', 'decreasing'] as const)(
+    'applies a rate change dated before the loan start from the first installment with %s repayments',
+    (repaymentType) => {
+      const loanAmount = 300000
+      const termMonths = 180
+      const result = calculateLoanSummary({
+        loanAmount,
+        annualRate: 5,
+        termMonths,
+        repaymentType,
+        loanStartDate: '2026-01-01',
+        rateChanges: [{ date: '2025-06-01', rate: 8 }],
+      })
+      const monthlyRate = 0.08 / 12
+      const expectedFirstPayment =
+        repaymentType === 'annuity'
+          ? (loanAmount * monthlyRate * Math.pow(1 + monthlyRate, termMonths)) /
+            (Math.pow(1 + monthlyRate, termMonths) - 1)
+          : loanAmount / termMonths + loanAmount * monthlyRate
+
+      expect(result.schedule[0].annualRate).toBe(8)
+      expect(result.schedule[0].interest).toBeCloseTo(2000, 2)
+      expect(result.schedule[0].payment).toBeCloseTo(expectedFirstPayment, 2)
+      expect(result.schedule[0].principal).toBeGreaterThan(0)
+      expect(result.loanTermMonths).toBe(termMonths)
+      expect(result.schedule[termMonths - 1].remainingBalance).toBe(0)
+    },
+  )
+
   it('updates installments on rate changes even after an extra payment with reduceInstallment', () => {
     const result = calculateLoanSummary({
       loanAmount: 681920,
