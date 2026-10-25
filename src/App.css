@@ -566,7 +566,7 @@ select:focus {
   margin-top: 16px;
 }
 
-.insurance-block h4 {
+.insurance-block h3 {
   margin: 0 0 12px;
   color: var(--text);
   font-size: 0.96rem;
@@ -1092,7 +1092,7 @@ select:focus {
   background: #f7f7f7;
 }
 
-.insurance-block h4,
+.insurance-block h3,
 .extra-payment-header h4 {
   font-size: 0.8rem;
   letter-spacing: 0.14em;
@@ -1761,7 +1761,7 @@ input[type='number']::-webkit-outer-spin-button {
   display: none !important;
 }
 
-@media (max-width: 900px) {
+@media screen and (max-width: 900px) {
   .schedule-table table,
   .schedule-table tbody,
   .schedule-table tfoot {
@@ -2050,5 +2050,92 @@ input[type='checkbox'] {
     width: auto;
     max-width: none;
     transform: none;
+  }
+}
+
+.print-summary {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .site-nav,
+  .hero,
+  .auth-panel,
+  .form-panel,
+  .mobile-summary-bar,
+  .schedule-actions,
+  .confirm-backdrop {
+    display: none !important;
+  }
+
+  .page-shell {
+    max-width: none;
+    padding: 0;
+  }
+
+  .print-summary {
+    display: block;
+    margin-bottom: 16px;
+    color: #101010;
+  }
+
+  .print-summary::before {
+    content: 'Harmonogram spłat kredytu hipotecznego';
+    display: block;
+    margin-bottom: 4px;
+    font-size: 1.3rem;
+    font-weight: 700;
+  }
+
+  .print-summary::after {
+    content: attr(data-details);
+    display: block;
+    font-size: 0.9rem;
+  }
+
+  .app-grid {
+    display: block;
+  }
+
+  .panel {
+    margin: 0 0 16px;
+    box-shadow: none;
+  }
+
+  .summary-panel,
+  .schedule-table tr {
+    break-inside: avoid;
+  }
+
+  .schedule-table .schedule-row[hidden] {
+    display: table-row !important;
+  }
+
+  .schedule-table thead th {
+    position: static;
+  }
+
+  .schedule-table th,
+  .schedule-table td {
+    padding: 4px 6px;
+    font-size: 0.72rem;
+  }
+
+  .schedule-table,
+  .summary-panel {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .site-footer {
+    margin-top: 12px;
   }
 }

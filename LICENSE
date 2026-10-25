@@ -1,0 +1,32 @@
+Copyright (c) 2026 Grzegorz Jureczko. All rights reserved.
+
+This is a source-available project, not open source. The source code is
+published for viewing and evaluation only.
+
+PERMITTED
+
+1. Using the hosted application at https://kredyt-hipoteczny.vercel.app/
+   free of charge for personal, non-commercial purposes.
+2. Viewing the source code in this repository and running it locally
+   solely to evaluate it (for example, as part of a code review or a
+   recruitment process).
+3. The limited rights that the GitHub Terms of Service grant to other
+   GitHub users (viewing and forking the repository on GitHub).
+
+NOT PERMITTED without prior written permission from the copyright holder
+
+1. Copying, reproducing, redistributing or publishing the source code, in
+   whole or in part, outside the uses listed above.
+2. Modifying the source code or creating derivative works based on it.
+3. Any commercial use, including selling the software, offering it as a
+   service, or including it in a commercial product or service.
+4. Sublicensing the software or granting others any rights to it.
+
+NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE. CALCULATION RESULTS
+ARE INDICATIVE ONLY AND DO NOT CONSTITUTE FINANCIAL ADVICE.

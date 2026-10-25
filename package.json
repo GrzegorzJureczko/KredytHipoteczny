@@ -1,12 +1,33 @@
 {
   "name": "kalkulatorkredytowy",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Mortgage calculator with repayment schedule, overpayments and rate changes (React, TypeScript, Vite, Supabase).",
+  "keywords": [
+    "mortgage",
+    "loan-calculator",
+    "repayment-schedule",
+    "react",
+    "typescript",
+    "vite",
+    "supabase"
+  ],
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://kredyt-hipoteczny.vercel.app/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GrzegorzJureczko/KredytHipoteczny.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -21,6 +42,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "axe-core": "^4.14.0",
     "jsdom": "^30.1.2",
     "oxlint": "^1.81.0",
     "typescript": "~6.0.2",

@@ -236,7 +236,7 @@ export function calculateLoanSummary(input: LoanInput): LoanSummary {
   let recastDecreasing = false
   let currentAnnuityPayment = monthlyPayment
   let currentDecreasingPrincipal = loanAmount / termMonths
-  let previousAnnualRate = annualRates[0] ?? annualRate
+  let previousAnnualRate = annualRate
 
   for (let month = 1; month <= termMonths; month++) {
     const monthIndex = month - 1
