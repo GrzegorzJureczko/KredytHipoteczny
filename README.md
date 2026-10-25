@@ -41,7 +41,8 @@ Library, oxlint, GitHub Actions, Vercel.
 ## How the calculation works
 
 The financial logic lives in [`src/calculator.ts`](src/calculator.ts) and is independent of the UI.
-The conventions are deliberate and covered by tests:
+The conventions are deliberate and covered by tests (the full description, with formulas, is in
+[docs/jak-liczy-kalkulator.md](docs/jak-liczy-kalkulator.md), in Polish):
 
 - Interest for a month is the opening balance times the annual rate divided by 12.
 - An overpayment is booked in the month it is paid. It does not change that month's interest or
@@ -61,10 +62,16 @@ The conventions are deliberate and covered by tests:
 | Path | Purpose |
 | --- | --- |
 | `src/calculator.ts` | Schedule and summary calculation (pure functions) |
-| `src/savedCalculations.ts` | Validation and backward-compatible normalization of saved payloads |
-| `src/App.tsx` | UI and form state |
+| `src/loanForm.ts` | Form model, defaults, additional costs, validation warnings |
+| `src/scheduleView.ts`, `src/summaryView.ts` | Derive the schedule rows, yearly totals and summary figures shown in the UI |
+| `src/savedCalculations.ts`, `src/savedEntries.ts` | Validation and backward-compatible normalization of saved payloads |
+| `src/format.ts` | Polish number, money and duration formatting |
+| `src/hooks/` | `useLoanForm` (form state and actions), `useAccount` (Supabase auth and saved calculations) |
+| `src/components/` | Presentational components: inputs, form sections, summary, schedule, account panel |
+| `src/App.tsx` | Composition of the page |
 | `src/lib/supabase.ts` | Supabase client (disabled when no env vars are set) |
 | `supabase/migrations/` | Database schema, row level security policies |
+| `docs/` | Documentation of the calculation rules |
 | `.github/workflows/ci.yml` | Lint, tests and build on every push and pull request |
 
 ## Getting started
@@ -76,7 +83,7 @@ npm install
 npm run dev
 ```
 
-The calculator wog
+The calculator works immediately. Sign-in and saved calculations need Supabase (see below).
 
 | Script | Description |
 | --- | --- |
@@ -105,12 +112,17 @@ Only the public anon key is used in the browser; access to data is enforced by r
 
 ## Tests
 
-Around 100 tests run in CI:
+Over 300 tests run in CI:
 
 - calculator unit tests: installments, rate changes including 0%, one-off and recurring overpayments,
   payoff edge cases;
+- calculator invariants checked over a grid of loan amounts, rates, terms, repayment types and
+  overpayment scenarios: the balance never grows, the principal repaid equals the loan amount, summary
+  totals match the schedule rows, and overpayments never raise the interest;
+- unit tests for the form model, schedule and summary views, and formatting helpers;
 - normalization of saved payloads, including legacy formats;
-- UI tests with Testing Library: inputs, validation, summary, schedule, saving and loading.
+- UI tests with Testing Library: inputs, validation, summary, schedule, saving and loading;
+- accessibility checks with axe-core (heading order, landmarks, labels, table structure).
 
 ## Deployment
 

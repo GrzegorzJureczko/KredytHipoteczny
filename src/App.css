@@ -566,7 +566,7 @@ select:focus {
   margin-top: 16px;
 }
 
-.insurance-block h4 {
+.insurance-block h3 {
   margin: 0 0 12px;
   color: var(--text);
   font-size: 0.96rem;
@@ -1092,7 +1092,7 @@ select:focus {
   background: #f7f7f7;
 }
 
-.insurance-block h4,
+.insurance-block h3,
 .extra-payment-header h4 {
   font-size: 0.8rem;
   letter-spacing: 0.14em;
