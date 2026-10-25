@@ -1,7 +1,7 @@
 # Mortgage calculator (Kalkulator kredytu hipotecznego)
 
 [![CI](https://github.com/GrzegorzJureczko/KredytHipoteczny/actions/workflows/ci.yml/badge.svg)](https://github.com/GrzegorzJureczko/KredytHipoteczny/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: All rights reserved](https://img.shields.io/badge/license-source--available-lightgrey.svg)](LICENSE)
 
 **Live demo: <https://kredyt-hipoteczny.vercel.app/>**
 
@@ -128,4 +128,5 @@ Results are indicative and are not a loan offer. The actual terms are set by the
 
 ## License
 
-[MIT](LICENSE)
+Source-available, all rights reserved. The app is free to use and the code is public for viewing and
+evaluation, but copying, modifying and commercial use are not allowed. See [LICENSE](LICENSE).
