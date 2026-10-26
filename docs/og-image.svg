@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#101010"/>
+  <rect y="594" width="1200" height="36" fill="#910a2d"/>
+
+  <g transform="translate(50 84) scale(5)">
+    <path d="M6 16 16 7l10 9M10 14v10h12V14" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="square"/>
+  </g>
+
+  <g font-family="'Segoe UI', Inter, Arial, sans-serif" fill="#fff">
+    <text x="80" y="330" font-size="92" font-weight="700">Kalkulator kredytu</text>
+    <text x="80" y="428" font-size="92" font-weight="700">hipotecznego</text>
+    <text x="80" y="498" font-size="36" fill="#d4d4d4">Rata, harmonogram, nadpłaty i zmiany oprocentowania</text>
+    <text x="80" y="562" font-size="28" fill="#9a9a9a">www.symulatorkredytu.pl</text>
+  </g>
+</svg>
