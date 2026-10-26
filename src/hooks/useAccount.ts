@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+// Must load before the Supabase client, which clears the URL fragment during start-up.
+import {
+  clearAuthRedirectFromUrl,
+  getAuthRedirectErrorMessage,
+  initialAuthRedirect,
+} from '../authRedirect'
 import { calculateLoanSummary } from '../calculator'
 import { getAuthErrorMessage } from '../authError'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
@@ -30,16 +36,26 @@ export const useAccount = (form: FormState, setForm: Dispatch<SetStateAction<For
   const nameInputRef = useRef<HTMLInputElement>(null)
   const [savedCalculationsExpanded, setSavedCalculationsExpanded] = useState(false)
   const [lastSavedForm, setLastSavedForm] = useState<FormState>(initialForm)
-  const [authMessage, setAuthMessage] = useState<{ type: 'success' | 'error'; text: string }>({
-    type: 'success',
-    text: '',
-  })
+  const [authMessage, setAuthMessage] = useState<{ type: 'success' | 'error'; text: string }>(() =>
+    initialAuthRedirect?.kind === 'error'
+      ? { type: 'error', text: getAuthRedirectErrorMessage(initialAuthRedirect) }
+      : { type: 'success', text: '' },
+  )
+  const [isRecoveringPassword, setIsRecoveringPassword] = useState(
+    () => initialAuthRedirect?.kind === 'recovery',
+  )
   const [isAuthMessageVisible, setIsAuthMessageVisible] = useState(false)
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(lastSavedForm)
   const shouldWarnAboutChanges = Boolean(currentUserEmail) && hasUnsavedChanges
+
+  useEffect(() => {
+    if (initialAuthRedirect?.kind === 'error') {
+      clearAuthRedirectFromUrl()
+    }
+  }, [])
 
   useEffect(() => {
     if (!shouldWarnAboutChanges) {
@@ -170,7 +186,11 @@ export const useAccount = (form: FormState, setForm: Dispatch<SetStateAction<For
 
     const {
       data: { subscription },
-    } = client.auth.onAuthStateChange(async (_event, session) => {
+    } = client.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveringPassword(true)
+      }
+
       const user = session?.user
       setCurrentUserEmail(user?.email ?? null)
       setCurrentUserId(user?.id ?? null)
@@ -274,6 +294,37 @@ export const useAccount = (form: FormState, setForm: Dispatch<SetStateAction<For
     setAuthEmail('')
     setAuthPassword('')
     setAuthConfirmPassword('')
+  }
+
+  const handlePasswordUpdate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!supabase || !isSupabaseConfigured) {
+      setAuthMessage({ type: 'error', text: 'Brakuje konfiguracji Supabase.' })
+      return
+    }
+
+    if (authPassword.length < 6) {
+      setAuthMessage({ type: 'error', text: 'Hasło musi mieć co najmniej 6 znaków.' })
+      return
+    }
+
+    if (authPassword !== authConfirmPassword) {
+      setAuthMessage({ type: 'error', text: 'Hasła nie są zgodne.' })
+      return
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: authPassword })
+
+    if (error) {
+      setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) })
+      return
+    }
+
+    setAuthPassword('')
+    setAuthConfirmPassword('')
+    setIsRecoveringPassword(false)
+    setAuthMessage({ type: 'success', text: 'Hasło zostało zmienione.' })
   }
 
   const discardChangesThen = (action: () => void, message: string) => {
@@ -544,6 +595,7 @@ export const useAccount = (form: FormState, setForm: Dispatch<SetStateAction<For
     setAuthConfirmPassword,
     authMessage,
     isAuthMessageVisible,
+    isRecoveringPassword,
     currentUserEmail,
     saveDraftName,
     setSaveDraftName,
@@ -564,6 +616,7 @@ export const useAccount = (form: FormState, setForm: Dispatch<SetStateAction<For
     setConfirmRequest,
     discardChangesThen,
     handleAuthSubmit,
+    handlePasswordUpdate,
     handleLogout,
     handleSaveCurrentCalculationClick,
     saveNewCalculation,
