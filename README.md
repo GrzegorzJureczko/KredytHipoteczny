@@ -3,7 +3,7 @@
 [![CI](https://github.com/GrzegorzJureczko/KredytHipoteczny/actions/workflows/ci.yml/badge.svg)](https://github.com/GrzegorzJureczko/KredytHipoteczny/actions/workflows/ci.yml)
 [![License: All rights reserved](https://img.shields.io/badge/license-source--available-lightgrey.svg)](LICENSE)
 
-**Live demo: <https://kredyt-hipoteczny.vercel.app/>**
+**Live demo: <https://www.symulatorkredytu.pl/>**
 
 A single-page mortgage calculator that shows the real cost of a loan, not just the installment: a full
 repayment schedule, overpayments, rate changes (WIBOR + margin), fees and insurance. It is designed
@@ -131,6 +131,10 @@ Over 300 tests run in CI:
 
 The app is a static Vite build deployed on Vercel. Set `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_ANON_KEY` in the project settings to enable accounts.
+
+`public/` holds `robots.txt`, `sitemap.xml` and the social preview `og-image.png` (rendered from
+[`docs/og-image.svg`](docs/og-image.svg)). If the production URL changes, update the `homepage` field in
+`package.json`, `index.html`, `robots.txt` and `sitemap.xml`; `tests/seo.test.ts` checks that they agree.
 
 ## Roadmap
 
