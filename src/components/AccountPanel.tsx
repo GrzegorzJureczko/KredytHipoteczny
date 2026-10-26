@@ -14,6 +14,7 @@ export const AccountPanel = ({ account }: { account: AccountState }) => {
     setAuthConfirmPassword,
     authMessage,
     isAuthMessageVisible,
+    isRecoveringPassword,
     currentUserEmail,
     saveDraftName,
     setSaveDraftName,
@@ -31,6 +32,7 @@ export const AccountPanel = ({ account }: { account: AccountState }) => {
     hasUnsavedChanges,
     isSaveButtonInactive,
     handleAuthSubmit,
+    handlePasswordUpdate,
     handleLogout,
     handleSaveCurrentCalculationClick,
     saveNewCalculation,
@@ -43,7 +45,44 @@ export const AccountPanel = ({ account }: { account: AccountState }) => {
 
   return (
     <section className="panel auth-panel">
-      {currentUserEmail ? (
+      {isRecoveringPassword ? (
+        <>
+          <div className="auth-header">
+            <div>
+              <p className="eyebrow">Reset hasła</p>
+              <h2>Ustaw nowe hasło</h2>
+            </div>
+          </div>
+
+          <form className="auth-form" onSubmit={handlePasswordUpdate}>
+            <label>
+              <span>Nowe hasło</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                placeholder="Minimum 6 znaków"
+              />
+            </label>
+
+            <label>
+              <span>Powtórz nowe hasło</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={authConfirmPassword}
+                onChange={(event) => setAuthConfirmPassword(event.target.value)}
+                placeholder="Potwierdź hasło"
+              />
+            </label>
+
+            <button type="submit" className="primary-button">
+              Zapisz nowe hasło
+            </button>
+          </form>
+        </>
+      ) : currentUserEmail ? (
         <div className="auth-header logged-in-header">
           <div className="user-panel-row">
             <div className="left-user-actions">
